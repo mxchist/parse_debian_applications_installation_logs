@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 pretty_assertions = { version = "1.4.1", default-features = false, features = ["std"] }
 regex = "1.12.2"
+rsbash = "2.1.0"

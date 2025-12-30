@@ -3,7 +3,8 @@ use regex::Regex;
 //use std::str::FromStr;
 use std::vec::Vec;
 use std::fmt;
-//use pretty_assertions::{assert_eq, Comparison};
+use pretty_assertions::Comparison;
+use rsbash::rashf;
 
 #[derive(Debug)]
 enum Action {
@@ -56,7 +57,6 @@ fn main() {
                     Some(p) => {
                         //let to_remove_before = to_remove.clone();
                         to_remove.remove(p);
-                        //assert_eq!(to_remove_before, to_remove, "the last_line: {}");
                         //println!("the package to remove: {}, the to_remove:\n{}", &event.package_name, Comparison::new(&to_remove_before, &to_remove));
                     },
                     None => to_install.push(event.package_name),
@@ -67,11 +67,12 @@ fn main() {
             Action::StartupPackagesRemove => (),
         };
     }
-    dbg!(":?", &to_remove);
-    dbg!(":?", &to_install);
+    let to_install_before = to_install.clone();
+    remove_dependencies_from_packages(&mut to_install);
+    println!("{}", Comparison::new(&to_install_before, &to_install));
 }
 
-fn get_event<'a>(last_line: &'a str, lines_count: &usize) -> InstallationStatus {
+fn get_event(last_line: &str, lines_count: &usize) -> InstallationStatus {
     let re = Regex::new(r"^2\d{3}\-\d\d\-\d\d \d\d:\d\d:\d\d (status )?(?<action>installed|remove) (?<package_name>[^:]+):").unwrap();
     let caps = re.captures(last_line);
     let mut installation_status = InstallationStatus{
@@ -106,5 +107,26 @@ fn check_startup_packages_remove<'a>(last_line: &'a str) -> Option<Action> {
             }
         },
         None => None,
+    }
+}
+
+fn remove_dependencies_from_packages(packages_list: &mut Vec<String>) {
+    for package in packages_list.clone() {
+        let (_, output, _) = rashf!("apt-cache rdepends {}", package).unwrap();
+        let mut lines = output.lines();
+        if let Some(package_name) = lines.next() {
+            if package.eq(package_name) {
+                if let Some(reverse_depends) = lines.next() {
+                    if reverse_depends.eq("Reverse Depends:") {
+                        if let Some(first_line) = lines.next() {
+                            eprintln!("the first line of reverse dependensies is: {}", first_line);
+                            while let Some(p) = packages_list.iter().position(|key| key.eq(&package)) {
+                                packages_list.remove(p);
+                            };
+                        }
+                    }
+                }
+            }
+        };
     }
 }
