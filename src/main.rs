@@ -5,6 +5,10 @@ use std::vec::Vec;
 use std::fmt;
 use pretty_assertions::Comparison;
 use rsbash::rashf;
+use time::{
+    PrimitiveDateTime, macros::format_description,
+    parsing::Parsable,
+};
 
 #[derive(Debug)]
 enum Action {
@@ -77,6 +81,8 @@ fn main() {
         print!("{package} ");
     }
     println!("]");
+    
+    //assert_log_lines_order();
 }
 
 fn get_event(last_line: &str, lines_count: &usize) -> InstallationStatus {
@@ -135,5 +141,43 @@ fn remove_dependencies_from_packages(packages_list: &mut Vec<String>) {
                 }
             }
         };
+    }
+}
+
+fn assert_log_lines_order() {
+    let contents = fs::read_to_string(String::from(
+        "/home/max/Documents/system_config/var/log/dpkg.log",
+    ))
+    .unwrap();
+    let re = Regex::new(r"^(?<time>\d{4}\-\d\d\-\d\d \d\d:\d\d:\d\d) ").unwrap();
+    let format = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
+
+    let lines = contents.lines();
+    println!("The initial lines count is: {}", lines.clone().count());
+    let (mut time_current, mut time_before) = (PrimitiveDateTime::MIN, PrimitiveDateTime::MIN);
+    for line in lines {
+        time_before = time_current;
+        time_current = parse_to_datetime(&re, line, &format);
+        assert!(&time_before.le(&time_current), "{}", format!("The time before is less than the time in a current line.\nThe time_before: {time_before}, the current_line: {line}"));
+    }
+}
+
+fn parse_to_datetime(
+    re: &Regex,
+    line: &str,
+    format: &(impl Parsable + ?Sized),
+) -> PrimitiveDateTime {
+    match re.captures(line) {
+        Some(caps) => match caps.name("time") {
+            Some(caps) => {
+                let time_str = caps.as_str();
+                match PrimitiveDateTime::parse(time_str, &format) {
+                    Ok(dt) => dt,
+                    Err(e) => panic!("{e}, the line: {line}"),
+                }
+            }
+            None => panic!("the is no capture group time, the line: {line}"),
+        },
+        None => panic!("regex is no matches, the line: {line}"),
     }
 }

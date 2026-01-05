@@ -7,3 +7,4 @@ edition = "2024"
 pretty_assertions = { version = "1.4.1", default-features = false, features = ["std"] }
 regex = "1.12.2"
 rsbash = "2.1.0"
+time = { version = "0.3.44", default-features = false, features = ["formatting", "macros", "parsing"] }
