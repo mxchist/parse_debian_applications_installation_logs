@@ -67,9 +67,16 @@ fn main() {
             Action::StartupPackagesRemove => (),
         };
     }
-    let to_install_before = to_install.clone();
+    //let to_install_before = to_install.clone();
     remove_dependencies_from_packages(&mut to_install);
-    println!("{}", Comparison::new(&to_install_before, &to_install));
+    to_install.sort();
+    to_install.dedup();
+    //println!("{}", Comparison::new(&to_install_before, &to_install));
+    print!("[");
+    for package in to_install {
+        print!("{package} ");
+    }
+    println!("]");
 }
 
 fn get_event(last_line: &str, lines_count: &usize) -> InstallationStatus {
@@ -118,8 +125,8 @@ fn remove_dependencies_from_packages(packages_list: &mut Vec<String>) {
             if package.eq(package_name) {
                 if let Some(reverse_depends) = lines.next() {
                     if reverse_depends.eq("Reverse Depends:") {
-                        if let Some(first_line) = lines.next() {
-                            eprintln!("the first line of reverse dependensies is: {}", first_line);
+                        if let Some(_) = lines.next() {
+                            //eprintln!("the first line of reverse dependensies is: {}", first_line);
                             while let Some(p) = packages_list.iter().position(|key| key.eq(&package)) {
                                 packages_list.remove(p);
                             };
