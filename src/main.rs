@@ -50,7 +50,8 @@ struct InstallationStatus {
 fn main() {
     let (mut to_install, mut to_remove) = (Vec::<String>::new(), Vec::<String>::new());
 
-    let contents = fs::read_to_string(String::from("/home/max/Documents/system_config/var/log/dpkg.log")).unwrap();
+    // "/home/max/Documents/system_config/var/log/dpkg.log"
+    let contents = fs::read_to_string(get_path()).unwrap();
     let mut lines = contents.lines();
     println!("The initial lines count is: {}", lines.clone().count());
     while let Some(last_line) = lines.next_back() {
@@ -83,6 +84,10 @@ fn main() {
     println!("]");
     
     //assert_log_lines_order();
+}
+
+fn get_path() -> String {
+    std::env::var("GREPPED_LOG").unwrap()
 }
 
 fn get_event(last_line: &str, lines_count: &usize) -> InstallationStatus {
@@ -146,7 +151,7 @@ fn remove_dependencies_from_packages(packages_list: &mut Vec<String>) {
 
 fn assert_log_lines_order() {
     let contents = fs::read_to_string(String::from(
-        "/home/max/Documents/system_config/var/log/dpkg.log",
+        get_path(),
     ))
     .unwrap();
     let re = Regex::new(r"^(?<time>\d{4}\-\d\d\-\d\d \d\d:\d\d:\d\d) ").unwrap();
