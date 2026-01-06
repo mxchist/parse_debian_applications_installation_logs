@@ -82,7 +82,17 @@ impl TimeBeginRemoveDependecies {
     }
 }
 
+enum LogType {
+    GreppedDpkgLog,
+    AptHistoryGzip,
+}
+
 fn main() {
+    analyze_grepped_dpkg_log();
+    //assert_log_lines_order();
+}
+
+fn analyze_grepped_dpkg_log() {
     let (mut to_install, mut to_remove) = (Vec::<String>::new(), Vec::<String>::new());
     let mut stats = HashMap::<String, Duration>::new();
     let (mut time_begin, mut time_begin_remove_dependencies) =
@@ -91,7 +101,7 @@ fn main() {
     time_begin.old = SystemTime::now();
 
     // "/home/max/Documents/system_config/var/log/dpkg.log"
-    let contents = fs::read_to_string(get_path()).unwrap();
+    let contents = fs::read_to_string(get_path(LogType::GreppedDpkgLog)).unwrap();
     write_stats(
         String::from("file reading"),
         &mut stats,
@@ -102,7 +112,7 @@ fn main() {
     //}
     //panic!("Immediate interruption");
     let mut lines = contents.lines();
-    println!("The initial lines count is: {}", lines.clone().count());
+    //println!("The initial lines count is: {}", lines.clone().count());
     while let Some(last_line) = lines.next_back() {
         time_begin.old = SystemTime::now();
         let event = get_event(last_line, &lines.clone().count());
@@ -179,7 +189,6 @@ fn main() {
     for (k, v) in stats.iter() {
         println!("{k}\t{}", format_duration(v));
     }
-    //assert_log_lines_order();
 }
 
 fn write_stats(
@@ -192,8 +201,11 @@ fn write_stats(
     *duration_old += duration_new;
 }
 
-fn get_path() -> String {
-    std::env::var("GREPPED_LOG").unwrap()
+fn get_path(log_type: LogType) -> String {
+     match log_type {
+        LogType::GreppedDpkgLog => std::env::var("GREPPED_LOG").unwrap(),
+        LogType::AptHistoryGzip => std::env::var("APT_HISTORY_GZIP").unwrap(),
+    }
 }
 
 fn get_event(last_line: &str, lines_count: &usize) -> InstallationStatus {
@@ -300,7 +312,7 @@ fn format_duration(d: &std::time::Duration) -> String {
 }
 
 fn assert_log_lines_order() {
-    let contents = fs::read_to_string(String::from(get_path())).unwrap();
+    let contents = fs::read_to_string(String::from(get_path(LogType::GreppedDpkgLog))).unwrap();
     let re = Regex::new(r"^(?<time>\d{4}\-\d\d\-\d\d \d\d:\d\d:\d\d) ").unwrap();
     let format = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
 
