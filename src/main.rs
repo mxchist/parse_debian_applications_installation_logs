@@ -293,7 +293,7 @@ fn remove_dependencies_from_packages(
 fn format_duration(d: &std::time::Duration) -> String {
     let seconds = d.as_secs();
     match seconds {
-        2.. => format!("{}min {}sec", seconds / 60, seconds - seconds / 60),
+        2.. => format!("{}min {}sec", seconds / 60, seconds % 60),
         1.. => format!("{}sec {}ms", seconds, d.subsec_millis()),
         _ => format! {"{}ms", d.as_millis()},
     }
