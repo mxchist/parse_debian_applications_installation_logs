@@ -145,17 +145,6 @@ fn main() {
     }
     //let to_install_before = to_install.clone();
     time_begin.old = SystemTime::now();
-    remove_dependencies_from_packages(
-        &mut to_install,
-        &mut stats,
-        &mut time_begin_remove_dependencies,
-    );
-    write_stats(
-        String::from("remove dependencies from packages"),
-        &mut stats,
-        &mut time_begin.old,
-    );
-    time_begin.old = SystemTime::now();
     to_install.sort();
     write_stats(
         String::from("to_install, sorting"),
@@ -166,6 +155,17 @@ fn main() {
     to_install.dedup();
     write_stats(
         String::from("to_install, deduplicating"),
+        &mut stats,
+        &mut time_begin.old,
+    );
+    time_begin.old = SystemTime::now();
+    remove_dependencies_from_packages(
+        &mut to_install,
+        &mut stats,
+        &mut time_begin_remove_dependencies,
+    );
+    write_stats(
+        String::from("remove dependencies from packages"),
         &mut stats,
         &mut time_begin.old,
     );
