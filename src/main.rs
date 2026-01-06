@@ -9,6 +9,8 @@ use time::{
     PrimitiveDateTime, macros::format_description,
     parsing::Parsable,
 };
+use std::collections::HashMap;
+use std::time::{SystemTime, Duration};
 
 #[derive(Debug)]
 enum Action {
@@ -47,35 +49,80 @@ struct InstallationStatus {
     package_name: String,
 }
 
+struct TimeBegin {
+    old: SystemTime,
+    program_start: SystemTime,
+    action_installed: SystemTime,
+    action_installed_remove: SystemTime,
+    action_remove: SystemTime,
+}
+
+impl TimeBegin {
+    fn new() -> Self {
+        TimeBegin {
+            old: SystemTime::UNIX_EPOCH,
+            program_start: SystemTime::now(),
+            action_installed: SystemTime::UNIX_EPOCH,
+            action_installed_remove: SystemTime::UNIX_EPOCH,
+            action_remove: SystemTime::UNIX_EPOCH,
+        }
+    }
+}
+
 fn main() {
     let (mut to_install, mut to_remove) = (Vec::<String>::new(), Vec::<String>::new());
+    let mut stats = HashMap::<String, Duration>::new();
+    let mut time_begin = TimeBegin::new();
+
+    time_begin.old = SystemTime::now();
 
     // "/home/max/Documents/system_config/var/log/dpkg.log"
     let contents = fs::read_to_string(get_path()).unwrap();
+    write_stats(String::from("file reading"), &mut stats, &mut time_begin.old);
+    //for (k, v) in stats.iter() {
+    //    println!("{k}\t{}", format_duration(v));
+    //}
+    //panic!("Immediate interruption");
     let mut lines = contents.lines();
     println!("The initial lines count is: {}", lines.clone().count());
     while let Some(last_line) = lines.next_back() {
+        time_begin.old = SystemTime::now();
         let event = get_event(last_line, &lines.clone().count());
+        write_stats(String::from("get_event"), &mut stats, &mut time_begin.old);
         match event.action {
             Action::Installed => {
+                time_begin.action_installed = SystemTime::now();
                 match to_remove.iter().position(|key| key.eq(&event.package_name)) {
                     Some(p) => {
                         //let to_remove_before = to_remove.clone();
+                        time_begin.action_installed_remove = SystemTime::now();
                         to_remove.remove(p);
+                        write_stats(String::from("Action::Installed, remove"), &mut stats, &mut time_begin.action_installed_remove);
                         //println!("the package to remove: {}, the to_remove:\n{}", &event.package_name, Comparison::new(&to_remove_before, &to_remove));
                     },
                     None => to_install.push(event.package_name),
-                }
+                };
+                write_stats(String::from("Action::Installed, processing"), &mut stats, &mut time_begin.action_installed);
             },
-            Action::Remove => to_remove.push(event.package_name),
+            Action::Remove => {
+                time_begin.action_remove = SystemTime::now();
+                to_remove.push(event.package_name);
+                write_stats(String::from("Action::Remove"), &mut stats, &mut time_begin.action_remove);
+            },
             Action::Other(couldnt_parse) => eprintln!("not parsed line: {couldnt_parse}"),
             Action::StartupPackagesRemove => (),
         };
     }
     //let to_install_before = to_install.clone();
+    time_begin.old = SystemTime::now();
     remove_dependencies_from_packages(&mut to_install);
+    write_stats(String::from("remove dependencies from packages"), &mut stats, &mut time_begin.old);
+    time_begin.old = SystemTime::now();
     to_install.sort();
+    write_stats(String::from("to_install, sorting"), &mut stats, &mut time_begin.old);
+    time_begin.old = SystemTime::now();
     to_install.dedup();
+    write_stats(String::from("to_install, deduplicating"), &mut stats, &mut time_begin.old);
     //println!("{}", Comparison::new(&to_install_before, &to_install));
     print!("[");
     for package in to_install {
@@ -83,7 +130,17 @@ fn main() {
     }
     println!("]");
     
+    for (k, v) in stats.iter() {
+        println!("{k}\t{}", format_duration(v));
+    }
     //assert_log_lines_order();
+}
+
+fn write_stats(stats_name: String, stats: &mut HashMap::<String, Duration>, time_begin_old: &mut SystemTime) {
+    let duration_new = time_begin_old.elapsed().unwrap();
+    let mut duration_old = stats.entry(stats_name).or_insert(duration_new);
+    *duration_old += duration_new;
+    
 }
 
 fn get_path() -> String {
@@ -113,7 +170,7 @@ fn get_event(last_line: &str, lines_count: &usize) -> InstallationStatus {
     installation_status
 }
 
-fn check_startup_packages_remove<'a>(last_line: &'a str) -> Option<Action> {
+fn check_startup_packages_remove(last_line: &str) -> Option<Action> {
     let re = Regex::new(r"^2\d{3}\-\d\d\-\d\d \d\d:\d\d:\d\d (?<startup_packages>startup packages remove)").unwrap();
     match re.captures(last_line) {
         Some(caps) => {
@@ -146,6 +203,15 @@ fn remove_dependencies_from_packages(packages_list: &mut Vec<String>) {
                 }
             }
         };
+    }
+}
+
+fn format_duration(d: &std::time::Duration) -> String {
+    let seconds = d.as_secs();
+    match seconds {
+        2 .. => format!("{}min {}sec", seconds / 60, seconds - seconds / 60), 
+        1 .. => format!("{}sec {}ms", seconds, d.subsec_millis()), 
+        _ => format!{"{}ms", d.as_millis()},
     }
 }
 
