@@ -59,7 +59,7 @@ struct TimeBegin {
 
 impl TimeBegin {
     fn new() -> Self {
-        TimeBegin {
+        Self {
             old: SystemTime::UNIX_EPOCH,
             program_start: SystemTime::now(),
             action_installed: SystemTime::UNIX_EPOCH,
@@ -69,10 +69,26 @@ impl TimeBegin {
     }
 }
 
+struct TimeBeginRemoveDependecies {
+    old: SystemTime,
+    package_list_iterating: SystemTime,
+    package_list_remove: SystemTime,
+}
+
+impl TimeBeginRemoveDependecies {
+    fn new() -> Self {
+        Self {
+            old: SystemTime::UNIX_EPOCH,
+            package_list_iterating: SystemTime::UNIX_EPOCH,
+            package_list_remove: SystemTime::UNIX_EPOCH,
+        }
+    }
+}
+
 fn main() {
     let (mut to_install, mut to_remove) = (Vec::<String>::new(), Vec::<String>::new());
     let mut stats = HashMap::<String, Duration>::new();
-    let mut time_begin = TimeBegin::new();
+    let (mut time_begin, mut time_begin_remove_dependencies) = (TimeBegin::new(), TimeBeginRemoveDependecies::new());
 
     time_begin.old = SystemTime::now();
 
@@ -115,7 +131,7 @@ fn main() {
     }
     //let to_install_before = to_install.clone();
     time_begin.old = SystemTime::now();
-    remove_dependencies_from_packages(&mut to_install);
+    remove_dependencies_from_packages(&mut to_install, &mut stats, &mut time_begin_remove_dependencies);
     write_stats(String::from("remove dependencies from packages"), &mut stats, &mut time_begin.old);
     time_begin.old = SystemTime::now();
     to_install.sort();
@@ -185,24 +201,32 @@ fn check_startup_packages_remove(last_line: &str) -> Option<Action> {
     }
 }
 
-fn remove_dependencies_from_packages(packages_list: &mut Vec<String>) {
+fn remove_dependencies_from_packages(packages_list: &mut Vec<String>, stats: &mut HashMap::<String, Duration>, time_begin: &mut TimeBeginRemoveDependecies) {
     for package in packages_list.clone() {
+        time_begin.old = SystemTime::now();
         let (_, output, _) = rashf!("apt-cache rdepends {}", package).unwrap();
+        write_stats(String::from("remove dependencies, apt-cache rdepends"), stats, &mut time_begin.old);
         let mut lines = output.lines();
+        time_begin.old = SystemTime::now();
         if let Some(package_name) = lines.next() {
             if package.eq(package_name) {
                 if let Some(reverse_depends) = lines.next() {
                     if reverse_depends.eq("Reverse Depends:") {
                         if let Some(_) = lines.next() {
                             //eprintln!("the first line of reverse dependensies is: {}", first_line);
+                            time_begin.package_list_iterating = SystemTime::now();
                             while let Some(p) = packages_list.iter().position(|key| key.eq(&package)) {
+                                time_begin.package_list_remove = SystemTime::now();
                                 packages_list.remove(p);
+                                write_stats(String::from("remove dependencies, remove from package_list"), stats, &mut time_begin.package_list_remove);
                             };
+                            write_stats(String::from("remove dependencies, iterating over package_list"), stats, &mut time_begin.package_list_iterating);
                         }
                     }
                 }
             }
         };
+        write_stats(String::from("remove dependencies, iterationg over apt-cache output"), stats, &mut time_begin.old);
     }
 }
 
