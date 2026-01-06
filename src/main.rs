@@ -258,31 +258,27 @@ fn remove_dependencies_from_packages(
         );
         let mut lines = output.lines();
         time_begin.old = SystemTime::now();
-        if let Some(package_name) = lines.next() {
-            if package.eq(package_name) {
-                if let Some(reverse_depends) = lines.next() {
-                    if reverse_depends.eq("Reverse Depends:") {
-                        if let Some(_) = lines.next() {
-                            //eprintln!("the first line of reverse dependensies is: {}", first_line);
-                            time_begin.package_list_iterating = SystemTime::now();
-                            while let Some(p) =
-                                packages_list.iter().position(|key| key.eq(&package))
-                            {
-                                time_begin.package_list_remove = SystemTime::now();
-                                packages_list.remove(p);
-                                write_stats(
-                                    String::from("remove dependencies, remove from package_list"),
-                                    stats,
-                                    &mut time_begin.package_list_remove,
-                                );
-                            }
-                            write_stats(
-                                String::from("remove dependencies, iterating over package_list"),
-                                stats,
-                                &mut time_begin.package_list_iterating,
-                            );
-                        }
-                    }
+        if let Some(package_name) = lines.next() && package.eq(package_name) {
+            if let Some(reverse_depends) = lines.next() && reverse_depends.eq("Reverse Depends:") {
+               if let Some(_) = lines.next() {
+                   //eprintln!("the first line of reverse dependensies is: {}", first_line);
+                   time_begin.package_list_iterating = SystemTime::now();
+                   while let Some(p) =
+                       packages_list.iter().position(|key| key.eq(&package))
+                   {
+                       time_begin.package_list_remove = SystemTime::now();
+                       packages_list.remove(p);
+                       write_stats(
+                           String::from("remove dependencies, remove from package_list"),
+                           stats,
+                           &mut time_begin.package_list_remove,
+                       );
+                   }
+                   write_stats(
+                       String::from("remove dependencies, iterating over package_list"),
+                       stats,
+                       &mut time_begin.package_list_iterating,
+                   );
                 }
             }
         };
