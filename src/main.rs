@@ -9,6 +9,12 @@ use std::time::{Duration, SystemTime};
 use std::vec::Vec;
 use time::{PrimitiveDateTime, macros::format_description, parsing::Parsable};
 
+trait LogEvent<Rhs=Self> {
+    type Output;
+
+    fn get_event(last_line: &str, lines_count: &usize, log_type: LogType) -> Self::Output;
+}
+
 #[derive(Debug)]
 enum Action {
     Installed,
@@ -115,7 +121,7 @@ fn analyze_grepped_dpkg_log() {
     //println!("The initial lines count is: {}", lines.clone().count());
     while let Some(last_line) = lines.next_back() {
         time_begin.old = SystemTime::now();
-        let event = get_event(last_line, &lines.clone().count());
+        let event = InstallationStatus::get_event(last_line, &lines.clone().count(), LogType::GreppedDpkgLog);
         write_stats(String::from("get_event"), &mut stats, &mut time_begin.old);
         match event.action {
             Action::Installed => {
@@ -208,34 +214,64 @@ fn get_path(log_type: LogType) -> String {
     }
 }
 
-fn get_event(last_line: &str, lines_count: &usize) -> InstallationStatus {
-    let re = Regex::new(r"^2\d{3}\-\d\d\-\d\d \d\d:\d\d:\d\d (status )?(?<action>installed|remove) (?<package_name>[^:]+):").unwrap();
-    let caps = re.captures(last_line);
-    let mut installation_status = InstallationStatus {
-        action: Action::Other(CouldntParse {
-            line: String::from("init"),
-        }),
-        package_name: String::new(),
-    };
-    match caps {
-        Some(caps) => match caps.name("action") {
-            Some(action) => {
-                installation_status.action = Action::from_str(action.as_str());
-                installation_status.package_name =
-                    caps.name("package_name").unwrap().as_str().to_string();
-            }
-            None => eprintln!("Caption is empty. last_line is: {last_line}"),
-        },
-        None => {
-            installation_status.action = check_startup_packages_remove(last_line)
-                .or_else(|| {
-                    eprintln!("the lines count is: {lines_count}, the last_line is: {last_line}");
-                    None
-                })
-                .unwrap()
+impl LogEvent<LogType> for InstallationStatus {
+    type Output = InstallationStatus;
+
+    fn get_event(last_line: &str, lines_count: &usize, log_type: LogType) -> InstallationStatus {
+        match log_type {
+            LogType::GreppedDpkgLog => {
+                let re = Regex::new(r"^2\d{3}\-\d\d\-\d\d \d\d:\d\d:\d\d (status )?(?<action>installed|remove) (?<package_name>[^:]+):").unwrap();
+                let caps = re.captures(last_line);
+                let mut installation_status = InstallationStatus {
+                    action: Action::Other(CouldntParse {
+                        line: String::from("init"),
+                    }),
+                    package_name: String::new(),
+                };
+                match caps {
+                    Some(caps) => match caps.name("action") {
+                        Some(action) => {
+                            installation_status.action = Action::from_str(action.as_str());
+                            installation_status.package_name =
+                                caps.name("package_name").unwrap().as_str().to_string();
+                        }
+                        None => eprintln!("Caption is empty. last_line is: {last_line}"),
+                    },
+                    None => {
+                        installation_status.action = check_startup_packages_remove(last_line)
+                            .or_else(|| {
+                                eprintln!("the lines count is: {lines_count}, the last_line is: {last_line}");
+                                None
+                            })
+                            .unwrap()
+                    }
+                }
+                installation_status
+            },
+            LogType::AptHistoryGzip => panic!("An atomic InstallationStatus is not implemented for LogType::AptHistoryGzip, only the vector of InstallationStatus allowed"),
         }
     }
-    installation_status
+}
+
+impl LogEvent<LogType> for Vec<InstallationStatus> {
+    type Output = Vec<InstallationStatus>;
+
+    fn get_event(last_line: &str, lines_count: &usize, log_type: LogType) -> Vec<InstallationStatus> {
+        match log_type {
+            LogType::GreppedDpkgLog => panic!("The vector of InstllationStatus is not implemented for LogType::AptHistoryGzip, only an atomic InstallationStatus allowed"),
+            LogType::AptHistoryGzip => {
+                let command_with_arguments: Vec<String> = last_line.split(' ').collect();
+                if let Some(command) = command_with_arguments.first() {
+                    match command {
+                        "apt"|"apt-get" => analyze_apt_command_in_apt_history_log(
+                            command_with_arguments.clone()[1..]
+                        ),
+                        "aptdaemon" => Vec::<InstallationStatus>::new(),
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn check_startup_packages_remove(last_line: &str) -> Option<Action> {
@@ -349,5 +385,139 @@ fn parse_to_datetime(
             None => panic!("the is no capture group time, the line: {line}"),
         },
         None => panic!("regex is no matches, the line: {line}"),
+    }
+}
+
+fn analyze_apt_history_log() {
+    let (mut to_install, mut to_install_global, mut to_remove) = (Vec::<String>::new(), Vec::<String>::new(), Vec::<String>::new());
+    let mut stats = HashMap::<String, Duration>::new();
+    let (mut time_begin, mut time_begin_remove_dependencies) =
+        (TimeBegin::new(), TimeBeginRemoveDependecies::new());
+
+    time_begin.old = SystemTime::now();
+
+    // "/home/max/Documents/system_config/var/log/dpkg.log"
+    let apt_history_logs = get_path(LogType::GreppedDpkgLog);
+    let (_, contents, _) = rashf!("rg --search-zip --no-filename --sort=path --replace '$1' -P '^Commandline: (.+)' {}", apt_history_logs).unwrap();
+    write_stats(
+        String::from("logs reading"),
+        &mut stats,
+        &mut time_begin.old,
+    );
+    for line in contents.lines() {
+        to_install = Vec<InstallationStatus>::get_event(last_line, &lines.clone().count(), LogType::AptHistoryGzip);
+
+        // ==============================
+        // remove from to_install returned packages with action Remove, add to to_install packages with action Installed 
+        // ==============================
+    }
+}
+
+impl LogEvent<LogType> for Vec<InstallationStatus> {
+    type Output = Vec<InstallationStatus>;
+
+    fn get_event(last_line: &str, lines_count: &usize, log_type: LogType) -> Vec<InstallationStatus> {
+        match log_type {
+            LogType::GreppedDpkgLog => panic!("The vector of InstllationStatus is not implemented for LogType::AptHistoryGzip, only an atomic InstallationStatus allowed"),
+            LogType::AptHistoryGzip => {
+                let command_with_arguments = last_line.split(' ').collect();
+                if let Some(command) = command_with_arguments.first() {
+                    match command {
+                        "apt"|"apt-get" => analyze_apt_command_in_apt_history_log(
+                            command_with_arguments[1..].clone()
+                        ),
+                        "aptdaemon" => Vec::<String>::new(),
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn analyze_apt_command_in_apt_history_log(arguments: Vec::<String>) -> Vec<InstallationStatus> {
+    let action = match arguments.clone().first() {
+        Some("autoremove") => {
+            assert_eq!(arguments.count(), format!(
+                "Autoremove arguments count is more that 1. The autoremove arguments:\n{}",
+                arguments.join(" ")
+            ));
+            Action::Other(
+                CouldntParse{
+                    line: "autoremove"
+                }
+            )
+        },
+        Some("install") => Action::Installed,
+        Some("remove") => Action::Remove,
+        Some("reinstall") => Action::Installed,
+        Some(other_action) => panic!(
+            "apt or apt-get action is unknown, action: {},\nThe line:\n{} ",
+            other_action,
+            arguments.join(" ")
+        )
+    };
+    analyze_apt_arguments(arguments[1..]).map(|package_name| InstallationStatus{
+        action,
+        package_name
+    }).collect()
+}
+
+fn analyze_apt_arguments(arguments: Vec<String>) -> Vec<String> {
+    let mut is_flags_ended = false;
+    let mut packages_list = Vec::<String>::new();
+    
+    for argument in arguments.clone() {
+        match argument {
+            "-y" | "--yes" => {
+                if is_flags_ended {
+                    panic!{
+                        "{}", format!(
+                            "{}\n{} {}\n{}\n{}",
+                            "Flags are no longer expected when positional arguments was started, but a flag was encountered.",
+                            "The flag:",
+                            argument,
+                            "The line:",
+                            arguments.join(" ")
+                        )
+                    }
+                } else {
+                   //just skipping 
+                }
+            },
+            _ => {
+                match argument.start_with("-") {
+                    true => {
+                        match is_flags_ended {
+                            true =>
+                                panic!{
+                                    "{}", format!(
+                                        "{}\n{} {}\n{}\n{}",
+                                        "Flags are no longer expected when positional arguments was started, but a flag was encountered.",
+                                        "The flag:",
+                                        argument,
+                                        "The line:",
+                                        arguments.join(" ")
+                                    )
+                                },
+                            false => 
+                                panic!{
+                                    "{}", format!(
+                                        "{} {}\n{}\n{}",
+                                        "Here is an unknown flag:",
+                                        argument,
+                                        "The line:",
+                                        arguments.join(" ")
+                                    )
+                                }
+                            }
+                        },
+                    false => {
+                        is_flags_ended = true;
+                        packages_list.push(argument);
+                    }
+                }
+            }
+
+        }
     }
 }
