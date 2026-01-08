@@ -59,6 +59,9 @@ struct TimeBegin {
     program_start: SystemTime,
     action_installed: SystemTime,
     action_installed_remove: SystemTime,
+    action_installed_push: SystemTime,
+    action_remove_remove: SystemTime,
+    action_remove_push: SystemTime,
     action_remove: SystemTime,
 }
 
@@ -69,6 +72,9 @@ impl TimeBegin {
             program_start: SystemTime::now(),
             action_installed: SystemTime::UNIX_EPOCH,
             action_installed_remove: SystemTime::UNIX_EPOCH,
+            action_installed_push: SystemTine::UNIX_EPOCH,
+            action_remove_remove: SystemTime::UNIX_EPOCH,
+            action_remove_push: SystemTime::UNIX_EPOCH,
             action_remove: SystemTime::UNIX_EPOCH,
         }
     }
@@ -96,7 +102,8 @@ enum LogType {
 }
 
 fn main() {
-    analyze_grepped_dpkg_log();
+    //analyze_grepped_dpkg_log();
+    analyze_apt_history_log();
     //assert_log_lines_order();
 }
 
@@ -140,7 +147,15 @@ fn analyze_grepped_dpkg_log() {
                         );
                         //println!("the package to remove: {}, the to_remove:\n{}", &event.package_name, Comparison::new(&to_remove_before, &to_remove));
                     }
-                    None => to_install.push(event.package_name),
+                    None => {
+                        time_begin.action_installed_push = SystemTime::now();
+                        to_install.push(event.package_name);
+                        write_stats(
+                            String::from("Action::Installed, push"),
+                            &mut stats,
+                            &mut time_begin.action_installed_push,
+                        );
+                    },
                 };
                 write_stats(
                     String::from("Action::Installed, processing"),
@@ -149,13 +164,28 @@ fn analyze_grepped_dpkg_log() {
                 );
             }
             Action::Remove => {
-                time_begin.action_remove = SystemTime::now();
-                to_remove.push(event.package_name);
-                write_stats(
-                    String::from("Action::Remove"),
-                    &mut stats,
-                    &mut time_begin.action_remove,
-                );
+                match to_install.iter().position(|key| key.eq(&event.package_name)) {
+                    Some(p) => {
+                        //let to_install_before = to_install.clone();
+                        time_begin.action_remove_remove = SystemTime::now();
+                        to_install.remove(p);
+                        write_stats(
+                            String::from("Action::Remove, remove"),
+                            &mut stats,
+                            &mut time_begin.action_remove_remove,
+                        );
+                        //println!("the package to remove: {}, the to_remove:\n{}", &event.package_name, Comparison::new(&to_remove_before, &to_remove));
+                    },
+                    None => {
+                        time_begin.action_remove_push = SystemTime::now();
+                        to_remove.push(event.package_name);
+                        write_stats(
+                            String::from("Action::Remove push"),
+                            &mut stats,
+                            &mut time_begin.action_remove_push,
+                        );
+                    }
+                }
             }
             Action::Other(couldnt_parse) => eprintln!("not parsed line: {couldnt_parse}"),
             Action::StartupPackagesRemove => (),
@@ -429,7 +459,7 @@ fn analyze_apt_history_log() {
 
     time_begin.old = SystemTime::now();
 
-    let apt_history_logs = get_path(LogType::GreppedDpkgLog);
+    let apt_history_logs = get_path(LogType::AptHistoryGzip);
     let (_, contents, _) = rashf!(
         "rg --search-zip --no-filename --sort=path --replace '$1' -P '^Commandline: (.+)' {}",
         apt_history_logs
@@ -442,11 +472,30 @@ fn analyze_apt_history_log() {
     );
     for (line_number, line) in contents.lines().enumerate() {
         match InstallationStatusAptHistory::get_event(line, &line_number, LogType::AptHistoryGzip) {
-            (Action::Installed, packages_list) => {}
-            (Action::Remove, packages_list) => {}
-            (_, _) => eprintln!(
-                "Here is unknown operation. The line number is: {line_number}, the line is:\n{line}"
-            ),
+            (Action::Installed, packages_list) => {
+                match to_remove.iter().position(|key| key.eq(&event.package_name)) {
+                    Some(p) => {
+                        //time_begin.action_installed_remove = SystemTime::now();
+                        to_remove.remove(p);
+                        //write_stats(
+                        //    String::from("Action::Installed, remove"),
+                        //    &mut stats,
+                        //    &mut time_begin.action_installed_remove,
+                        //);
+                    }
+                    None => to_install.push(event.package_name),
+            (Action::Remove, packages_list) => {
+                ma
+                    time_begin.action_remove = SystemTime::now();
+                    to_remove.push(event.package_name);
+                    write_stats(
+                        String::from("Action::Remove"),
+                        &mut stats,
+                        &mut time_begin.action_remove,
+                    );
+            }
+            (Action::Other(couldnt_parse), packages_list) => eprintln!("not parsed line: {couldnt_parse}"),
+            (Action::StartupPackagesRemove, packages_list) => (),
         };
 
         // ==============================
