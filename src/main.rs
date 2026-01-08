@@ -12,7 +12,7 @@ use time::{PrimitiveDateTime, macros::format_description, parsing::Parsable};
 trait LogEvent<Rhs=Self> {
     type Output;
 
-    fn get_event(last_line: &str, lines_count: &usize, log_type: LogType) -> Self::Output;
+    fn get_event(last_line: &str, line_number: &usize, log_type: LogType) -> Self::Output;
 }
 
 #[derive(Debug)]
@@ -51,6 +51,8 @@ struct InstallationStatus {
     action: Action,
     package_name: String,
 }
+
+type InstallationStatusAptHistory = (Action, Vec<String>);
 
 struct TimeBegin {
     old: SystemTime,
@@ -118,10 +120,10 @@ fn analyze_grepped_dpkg_log() {
     //}
     //panic!("Immediate interruption");
     let mut lines = contents.lines();
-    //println!("The initial lines count is: {}", lines.clone().count());
-    while let Some(last_line) = lines.next_back() {
+    //println!("The initial lines count is: {}", lines.clone().len());
+    for (line_number, last_line) in lines.rev().enumerate() {
         time_begin.old = SystemTime::now();
-        let event = InstallationStatus::get_event(last_line, &lines.clone().count(), LogType::GreppedDpkgLog);
+        let event = InstallationStatus::get_event(last_line, &line_number, LogType::GreppedDpkgLog);
         write_stats(String::from("get_event"), &mut stats, &mut time_begin.old);
         match event.action {
             Action::Installed => {
@@ -217,7 +219,7 @@ fn get_path(log_type: LogType) -> String {
 impl LogEvent<LogType> for InstallationStatus {
     type Output = InstallationStatus;
 
-    fn get_event(last_line: &str, lines_count: &usize, log_type: LogType) -> InstallationStatus {
+    fn get_event(last_line: &str, line_number: &usize, log_type: LogType) -> InstallationStatus {
         match log_type {
             LogType::GreppedDpkgLog => {
                 let re = Regex::new(r"^2\d{3}\-\d\d\-\d\d \d\d:\d\d:\d\d (status )?(?<action>installed|remove) (?<package_name>[^:]+):").unwrap();
@@ -240,7 +242,13 @@ impl LogEvent<LogType> for InstallationStatus {
                     None => {
                         installation_status.action = check_startup_packages_remove(last_line)
                             .or_else(|| {
-                                eprintln!("the lines count is: {lines_count}, the last_line is: {last_line}");
+                                eprintln!(
+                                    "{}\n{}",
+                                    "The is no rule to parse the line.",
+                                    format!(
+                                        "The current line number is: {line_number}, the last_line is: {last_line}"
+                                    )
+                                );
                                 None
                             })
                             .unwrap()
@@ -253,21 +261,34 @@ impl LogEvent<LogType> for InstallationStatus {
     }
 }
 
-impl LogEvent<LogType> for Vec<InstallationStatus> {
-    type Output = Vec<InstallationStatus>;
+impl LogEvent<LogType> for InstallationStatusAptHistory {
+    type Output = InstallationStatusAptHistory;
 
-    fn get_event(last_line: &str, lines_count: &usize, log_type: LogType) -> Vec<InstallationStatus> {
+    fn get_event(last_line: &str, line_number: &usize, log_type: LogType) -> InstallationStatusAptHistory {
         match log_type {
             LogType::GreppedDpkgLog => panic!("The vector of InstllationStatus is not implemented for LogType::AptHistoryGzip, only an atomic InstallationStatus allowed"),
             LogType::AptHistoryGzip => {
-                let command_with_arguments: Vec<String> = last_line.split(' ').collect();
+                let command_with_arguments: Vec<&str> = last_line.split(' ').collect();
                 if let Some(command) = command_with_arguments.first() {
-                    match command {
-                        "apt"|"apt-get" => analyze_apt_command_in_apt_history_log(
-                            command_with_arguments.clone()[1..]
+                    match *command {
+                        "apt" | "apt-get" => analyze_apt_command_in_apt_history_log(
+                            command_with_arguments.clone()[1..].into_iter()
+                                .map(
+                                    |s| s.to_string()
+                                ).collect()
                         ),
-                        "aptdaemon" => Vec::<InstallationStatus>::new(),
+                        "aptdaemon" => (
+                            Action::Other(
+                                CouldntParse{
+                                    line: String::from("aptdaemon")
+                                }
+                            ),
+                            Vec::<String>::new()
+                        ),
+                        unknown_command => panic!("Here is an unknown command: {unknown_command}"),
                     }
+                } else {
+                    panic!("The line is empty") 
                 }
             }
         }
@@ -353,7 +374,7 @@ fn assert_log_lines_order() {
     let format = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
 
     let lines = contents.lines();
-    println!("The initial lines count is: {}", lines.clone().count());
+    //println!("The initial lines count is: {}", lines.clone().len());
     let (mut time_current, mut time_before) = (PrimitiveDateTime::MIN, PrimitiveDateTime::MIN);
     for line in lines {
         time_before = time_current;
@@ -404,8 +425,18 @@ fn analyze_apt_history_log() {
         &mut stats,
         &mut time_begin.old,
     );
-    for line in contents.lines() {
-        to_install = Vec<InstallationStatus>::get_event(last_line, &lines.clone().count(), LogType::AptHistoryGzip);
+    for (line_number, line) in contents.lines().enumerate() {
+        match InstallationStatusAptHistory::get_event(line, &line_number, LogType::AptHistoryGzip) {
+            (Action::Installed, packages_list) => {
+
+            },
+            (Action::Remove, packages_list) => {
+
+            },
+            (_, _) => eprintln!(
+                "Here is unknown operation. The line number is: {line_number}, the line is:\n{line}"
+            ),
+        };
 
         // ==============================
         // remove from to_install returned packages with action Remove, add to to_install packages with action Installed 
@@ -413,37 +444,18 @@ fn analyze_apt_history_log() {
     }
 }
 
-impl LogEvent<LogType> for Vec<InstallationStatus> {
-    type Output = Vec<InstallationStatus>;
-
-    fn get_event(last_line: &str, lines_count: &usize, log_type: LogType) -> Vec<InstallationStatus> {
-        match log_type {
-            LogType::GreppedDpkgLog => panic!("The vector of InstllationStatus is not implemented for LogType::AptHistoryGzip, only an atomic InstallationStatus allowed"),
-            LogType::AptHistoryGzip => {
-                let command_with_arguments = last_line.split(' ').collect();
-                if let Some(command) = command_with_arguments.first() {
-                    match command {
-                        "apt"|"apt-get" => analyze_apt_command_in_apt_history_log(
-                            command_with_arguments[1..].clone()
-                        ),
-                        "aptdaemon" => Vec::<String>::new(),
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn analyze_apt_command_in_apt_history_log(arguments: Vec::<String>) -> Vec<InstallationStatus> {
-    let action = match arguments.clone().first() {
+fn analyze_apt_command_in_apt_history_log(arguments: Vec::<String>) -> InstallationStatusAptHistory {
+    let action = match arguments.clone().first().map(|s| s.as_str()) {
         Some("autoremove") => {
-            assert_eq!(arguments.count(), format!(
-                "Autoremove arguments count is more that 1. The autoremove arguments:\n{}",
-                arguments.join(" ")
-            ));
+            assert_eq!(arguments.len(), 1, "{}",
+                format!(
+                    "Autoremove arguments count is not equal to 1. The autoremove arguments:\n{}",
+                    arguments.join(" ")
+                )
+            );
             Action::Other(
                 CouldntParse{
-                    line: "autoremove"
+                    line: String::from("autoremove")
                 }
             )
         },
@@ -454,12 +466,16 @@ fn analyze_apt_command_in_apt_history_log(arguments: Vec::<String>) -> Vec<Insta
             "apt or apt-get action is unknown, action: {},\nThe line:\n{} ",
             other_action,
             arguments.join(" ")
-        )
+        ),
+        None => panic!("There are no any arguments after command"),
     };
-    analyze_apt_arguments(arguments[1..]).map(|package_name| InstallationStatus{
+    (
         action,
-        package_name
-    }).collect()
+        analyze_apt_arguments(arguments[1..].into_iter()
+            .map(
+                |s| s.to_string()).collect()
+            )
+    )
 }
 
 fn analyze_apt_arguments(arguments: Vec<String>) -> Vec<String> {
@@ -467,7 +483,7 @@ fn analyze_apt_arguments(arguments: Vec<String>) -> Vec<String> {
     let mut packages_list = Vec::<String>::new();
     
     for argument in arguments.clone() {
-        match argument {
+        match argument.as_str() {
             "-y" | "--yes" => {
                 if is_flags_ended {
                     panic!{
@@ -481,11 +497,11 @@ fn analyze_apt_arguments(arguments: Vec<String>) -> Vec<String> {
                         )
                     }
                 } else {
-                   //just skipping 
+                   continue
                 }
             },
             _ => {
-                match argument.start_with("-") {
+                match argument.starts_with("-") {
                     true => {
                         match is_flags_ended {
                             true =>
@@ -520,4 +536,5 @@ fn analyze_apt_arguments(arguments: Vec<String>) -> Vec<String> {
 
         }
     }
+    packages_list
 }
