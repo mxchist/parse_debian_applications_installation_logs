@@ -73,12 +73,38 @@ impl TimeBegin {
             action_installed: SystemTime::UNIX_EPOCH,
             action_installed_remove: SystemTime::UNIX_EPOCH,
             action_installed_push: SystemTine::UNIX_EPOCH,
+            action_remove: SystemTime::UNIX_EPOCH,
             action_remove_remove: SystemTime::UNIX_EPOCH,
             action_remove_push: SystemTime::UNIX_EPOCH,
-            action_remove: SystemTime::UNIX_EPOCH,
         }
     }
 }
+
+trait WriteStats<T> {
+    fn write_stats(
+        stats_name: String,
+        stats: &mut HashMap<String, Duration>,
+        time: <T>
+    );
+}
+
+enum DurationSinceBeginning {
+    action_installed_remove(duration: Duration),
+    action_installed_push(duration: Duration),
+    action_remove_remove(duration: Duration),
+    action_remove_push(duration: Duration),
+}
+
+//impl DurationSinceBeginning {
+//    fn to_string(&self) -> String {
+//        match self {
+//            action_installed_remove: Duration::from_secs(0),
+//            action_installed_push: Duration::from_secs(0),
+//            action_remove_remove: Duration::from_secs(0),
+//            action_remove_push: Duration::from_secs(0),
+//        }
+//    }
+//}
 
 struct TimeBeginRemoveDependecies {
     old: SystemTime,
@@ -94,6 +120,11 @@ impl TimeBeginRemoveDependecies {
             package_list_remove: SystemTime::UNIX_EPOCH,
         }
     }
+}
+
+struct DurationsVectorOperations {
+    Remove: Duration,
+    Push: Duration,
 }
 
 enum LogType {
@@ -120,7 +151,7 @@ fn analyze_grepped_dpkg_log() {
     write_stats(
         String::from("file reading"),
         &mut stats,
-        &mut time_begin.old,
+        &time_begin.old,
     );
     //for (k, v) in stats.iter() {
     //    println!("{k}\t{}", format_duration(v));
@@ -131,7 +162,7 @@ fn analyze_grepped_dpkg_log() {
     for (line_number, last_line) in lines.rev().enumerate() {
         time_begin.old = SystemTime::now();
         let event = InstallationStatus::get_event(last_line, &line_number, LogType::GreppedDpkgLog);
-        write_stats(String::from("get_event"), &mut stats, &mut time_begin.old);
+        write_stats(String::from("get_event"), &mut stats, &time_begin.old);
         match event.action {
             Action::Installed => {
                 time_begin.action_installed = SystemTime::now();
@@ -143,7 +174,7 @@ fn analyze_grepped_dpkg_log() {
                         write_stats(
                             String::from("Action::Installed, remove"),
                             &mut stats,
-                            &mut time_begin.action_installed_remove,
+                            &time_begin.action_installed_remove,
                         );
                         //println!("the package to remove: {}, the to_remove:\n{}", &event.package_name, Comparison::new(&to_remove_before, &to_remove));
                     }
@@ -153,14 +184,14 @@ fn analyze_grepped_dpkg_log() {
                         write_stats(
                             String::from("Action::Installed, push"),
                             &mut stats,
-                            &mut time_begin.action_installed_push,
+                            &time_begin.action_installed_push,
                         );
                     },
                 };
                 write_stats(
                     String::from("Action::Installed, processing"),
                     &mut stats,
-                    &mut time_begin.action_installed,
+                    &time_begin.action_installed,
                 );
             }
             Action::Remove => {
@@ -172,7 +203,7 @@ fn analyze_grepped_dpkg_log() {
                         write_stats(
                             String::from("Action::Remove, remove"),
                             &mut stats,
-                            &mut time_begin.action_remove_remove,
+                            &time_begin.action_remove_remove,
                         );
                         //println!("the package to remove: {}, the to_remove:\n{}", &event.package_name, Comparison::new(&to_remove_before, &to_remove));
                     },
@@ -182,7 +213,7 @@ fn analyze_grepped_dpkg_log() {
                         write_stats(
                             String::from("Action::Remove push"),
                             &mut stats,
-                            &mut time_begin.action_remove_push,
+                            &time_begin.action_remove_push,
                         );
                     }
                 }
@@ -197,25 +228,25 @@ fn analyze_grepped_dpkg_log() {
     write_stats(
         String::from("to_install, sorting"),
         &mut stats,
-        &mut time_begin.old,
+        &time_begin.old,
     );
     time_begin.old = SystemTime::now();
     to_install.dedup();
     write_stats(
         String::from("to_install, deduplicating"),
         &mut stats,
-        &mut time_begin.old,
+        &time_begin.old,
     );
     time_begin.old = SystemTime::now();
     remove_dependencies_from_packages(
         &mut to_install,
         &mut stats,
-        &mut time_begin_remove_dependencies,
+        &time_begin_remove_dependencies,
     );
     write_stats(
         String::from("remove dependencies from packages"),
         &mut stats,
-        &mut time_begin.old,
+        &time_begin.old,
     );
     //println!("{}", Comparison::new(&to_install_before, &to_install));
     print!("[");
@@ -229,14 +260,31 @@ fn analyze_grepped_dpkg_log() {
     }
 }
 
-fn write_stats(
-    stats_name: String,
-    stats: &mut HashMap<String, Duration>,
-    time_begin_old: &mut SystemTime,
-) {
-    let duration_new = time_begin_old.elapsed().unwrap();
-    let mut duration_old = stats.entry(stats_name).or_insert(duration_new);
-    *duration_old += duration_new;
+fn remove_and_push_to_vectors(to_be_removed: Vec<String>, to_be_pushed: Vec<String>) -> TimeBegin {
+    let ;
+}
+
+impl<SystemTime> WriteStats {
+    fn write_stats(
+        stats_name: String,
+        stats: &mut HashMap<String, Duration>,
+        time: &SystemTime,
+    ) {
+        let duration_new = (*time).elapsed().unwrap();
+        let mut duration_old = stats.entry(stats_name).or_insert(duration_new);
+        *duration_old += time;
+    }
+}
+
+impl<Duration> WriteStats {
+    fn write_stats(
+        stats_name: String,
+        stats: &mut HashMap<String, Duration>,
+        time: &Duration,
+    ) {
+        let mut duration_old = stats.entry(stats_name).or_insert(*time);
+        *duration_old += time;
+    }
 }
 
 fn get_path(log_type: LogType) -> String {
@@ -359,7 +407,7 @@ fn remove_dependencies_from_packages(
         write_stats(
             String::from("remove dependencies, apt-cache rdepends"),
             stats,
-            &mut time_begin.old,
+            &time_begin.old,
         );
         let mut lines = output.lines();
         time_begin.old = SystemTime::now();
@@ -378,13 +426,13 @@ fn remove_dependencies_from_packages(
                         write_stats(
                             String::from("remove dependencies, remove from package_list"),
                             stats,
-                            &mut time_begin.package_list_remove,
+                            &time_begin.package_list_remove,
                         );
                     }
                     write_stats(
                         String::from("remove dependencies, iterating over package_list"),
                         stats,
-                        &mut time_begin.package_list_iterating,
+                        &time_begin.package_list_iterating,
                     );
                 }
             }
@@ -392,7 +440,7 @@ fn remove_dependencies_from_packages(
         write_stats(
             String::from("remove dependencies, iterationg over apt-cache output"),
             stats,
-            &mut time_begin.old,
+            &time_begin.old,
         );
     }
 }
@@ -468,7 +516,7 @@ fn analyze_apt_history_log() {
     write_stats(
         String::from("logs reading"),
         &mut stats,
-        &mut time_begin.old,
+        &time_begin.old,
     );
     for (line_number, line) in contents.lines().enumerate() {
         match InstallationStatusAptHistory::get_event(line, &line_number, LogType::AptHistoryGzip) {
@@ -480,7 +528,7 @@ fn analyze_apt_history_log() {
                         //write_stats(
                         //    String::from("Action::Installed, remove"),
                         //    &mut stats,
-                        //    &mut time_begin.action_installed_remove,
+                        //    &time_begin.action_installed_remove,
                         //);
                     }
                     None => to_install.push(event.package_name),
@@ -491,7 +539,7 @@ fn analyze_apt_history_log() {
                     write_stats(
                         String::from("Action::Remove"),
                         &mut stats,
-                        &mut time_begin.action_remove,
+                        &time_begin.action_remove,
                     );
             }
             (Action::Other(couldnt_parse), packages_list) => eprintln!("not parsed line: {couldnt_parse}"),
