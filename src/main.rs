@@ -38,7 +38,68 @@ impl Action {
             }),
         }
     }
+
+    fn manage_installation_candidates_on_action(&self, package_name: String, to_install: &mut Vec<String>, to_remove: &mut Vec<String>, time_begin: &mut TimeBegin, stats: &mut HashMap<String, Duration>) {
+        match self {
+            Action::Installed => {
+                let action_installed = SystemTime::now();
+                match to_remove.iter().position(|key| key.eq(&package_name)) {
+                    Some(p) => {
+                        //let to_remove_before = to_remove.clone();
+                        time_begin.action_installed_remove = SystemTime::now();
+                        to_remove.remove(p);
+                        &time_begin.action_installed_remove.update_stats(
+                            String::from("Action::Installed, remove"),
+                            stats,
+                        );
+                        //println!("the package to remove: {}, the to_remove:\n{}", &package_name, Comparison::new(&to_remove_before, &to_remove));
+                    }
+                    None => {
+                        time_begin.action_installed_push = SystemTime::now();
+                        to_install.push(package_name);
+                        &time_begin.action_installed_push.update_stats(
+                            String::from("Action::Installed, push"),
+                            stats,
+                        );
+                    },
+                };
+                &action_installed.update_stats(
+                    String::from("Action::Installed, processing"),
+                    stats,
+                );
+            },
+            Action::Remove => {
+                let action_remove = SystemTime::now();
+                match to_install.iter().position(|key| key.eq(&package_name)) {
+                    Some(p) => {
+                        //let to_install_before = to_install.clone();
+                        time_begin.action_remove_remove = SystemTime::now();
+                        to_install.remove(p);
+                        &time_begin.action_remove_remove.update_stats(
+                            String::from("Action::Remove, remove"),
+                            stats,
+                        );
+                        //println!("the package to remove: {}, the to_remove:\n{}", package_name, Comparison::new(&to_remove_before, &to_remove));
+                    },
+                    None => {
+                        time_begin.action_remove_push = SystemTime::now();
+                        to_remove.push(package_name);
+                        &time_begin.action_remove_push.update_stats(
+                            String::from("Action::Remove push"),
+                            stats,
+                        );
+                    }
+                };
+                &action_remove.update_stats(
+                    String::from("Action::Remove, processing"),
+                    stats,
+                );
+            },
+            _ => {},
+        }
+    }
 }
+
 
 impl fmt::Display for CouldntParse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -57,12 +118,10 @@ type InstallationStatusAptHistory = (Action, Vec<String>);
 struct TimeBegin {
     old: SystemTime,
     program_start: SystemTime,
-    action_installed: SystemTime,
     action_installed_remove: SystemTime,
     action_installed_push: SystemTime,
     action_remove_remove: SystemTime,
     action_remove_push: SystemTime,
-    action_remove: SystemTime,
 }
 
 impl TimeBegin {
@@ -70,10 +129,8 @@ impl TimeBegin {
         Self {
             old: SystemTime::UNIX_EPOCH,
             program_start: SystemTime::now(),
-            action_installed: SystemTime::UNIX_EPOCH,
             action_installed_remove: SystemTime::UNIX_EPOCH,
             action_installed_push: SystemTime::UNIX_EPOCH,
-            action_remove: SystemTime::UNIX_EPOCH,
             action_remove_remove: SystemTime::UNIX_EPOCH,
             action_remove_push: SystemTime::UNIX_EPOCH,
         }
@@ -106,22 +163,6 @@ enum DurationSinceBeginning {
 //    }
 //}
 
-struct TimeBeginRemoveDependecies {
-    old: SystemTime,
-    package_list_iterating: SystemTime,
-    package_list_remove: SystemTime,
-}
-
-impl TimeBeginRemoveDependecies {
-    fn new() -> Self {
-        Self {
-            old: SystemTime::UNIX_EPOCH,
-            package_list_iterating: SystemTime::UNIX_EPOCH,
-            package_list_remove: SystemTime::UNIX_EPOCH,
-        }
-    }
-}
-
 struct DurationsVectorOperations {
     Remove: Duration,
     Push: Duration,
@@ -141,8 +182,7 @@ fn main() {
 fn analyze_grepped_dpkg_log() {
     let (mut to_install, mut to_remove) = (Vec::<String>::new(), Vec::<String>::new());
     let mut stats = HashMap::<String, Duration>::new();
-    let (mut time_begin, mut time_begin_remove_dependencies) =
-        (TimeBegin::new(), TimeBeginRemoveDependecies::new());
+    let mut time_begin = TimeBegin::new();
 
     time_begin.old = SystemTime::now();
 
@@ -163,17 +203,8 @@ fn analyze_grepped_dpkg_log() {
         let event = InstallationStatus::get_event(last_line, &line_number, LogType::GreppedDpkgLog);
         &time_begin.old.update_stats(String::from("get_event"), &mut stats);
         match event.action {
-            Action::Installed => {
-                manage_installation_candidates_when_action_installed(
-                    event.package_name,
-                    &mut to_install,
-                    &mut to_remove,
-                    &mut time_begin,
-                    &mut stats,
-                );
-            }
-            Action::Remove => {
-                manage_installation_candidates_when_action_remove(
+            action @ (Action::Installed | Action::Remove) => {
+                action.manage_installation_candidates_on_action(
                     event.package_name,
                     &mut to_install,
                     &mut to_remove,
@@ -200,7 +231,6 @@ fn analyze_grepped_dpkg_log() {
     );
     time_begin.old = SystemTime::now();
     remove_dependencies_from_packages(
-        &time_begin_remove_dependencies,
         &mut to_install,
         &mut stats,
     );
@@ -335,57 +365,6 @@ impl LogEvent<LogType> for InstallationStatusAptHistory {
     }
 }
 
-fn manage_installation_candidates_when_action_installed(package_name: String, to_install: &mut Vec<String>, to_remove: &mut Vec<String>, time_begin: &mut TimeBegin, stats: &mut HashMap<String, Duration>) {
-    time_begin.action_installed = SystemTime::now();
-    match to_remove.iter().position(|key| key.eq(&package_name)) {
-        Some(p) => {
-            //let to_remove_before = to_remove.clone();
-            time_begin.action_installed_remove = SystemTime::now();
-            to_remove.remove(p);
-            &time_begin.action_installed_remove.update_stats(
-                String::from("Action::Installed, remove"),
-                &mut stats,
-            );
-            //println!("the package to remove: {}, the to_remove:\n{}", &package_name, Comparison::new(&to_remove_before, &to_remove));
-        }
-        None => {
-            time_begin.action_installed_push = SystemTime::now();
-            to_install.push(package_name);
-            &time_begin.action_installed_push.update_stats(
-                String::from("Action::Installed, push"),
-                &mut stats,
-            );
-        },
-    };
-    &time_begin.action_installed.update_stats(
-        String::from("Action::Installed, processing"),
-        &mut stats,
-    );
-}
-
-fn manage_installation_candidates_when_action_remove(package_name: String, to_install: &mut Vec<String>, to_remove: &mut Vec<String>, time_begin: &mut TimeBegin, stats: &mut HashMap<String, Duration>) {
-    match to_install.iter().position(|key| key.eq(&package_name)) {
-        Some(p) => {
-            //let to_install_before = to_install.clone();
-            time_begin.action_remove_remove = SystemTime::now();
-            to_install.remove(p);
-            &time_begin.action_remove_remove.update_stats(
-                String::from("Action::Remove, remove"),
-                &mut stats,
-            );
-            //println!("the package to remove: {}, the to_remove:\n{}", package_name, Comparison::new(&to_remove_before, &to_remove));
-        },
-        None => {
-            time_begin.action_remove_push = SystemTime::now();
-            to_remove.push(package_name);
-            &time_begin.action_remove_push.update_stats(
-                String::from("Action::Remove push"),
-                &mut stats,
-            );
-        }
-    }
-}
-
 fn check_startup_packages_remove(last_line: &str) -> Option<Action> {
     let re = Regex::new(
         r"^2\d{3}\-\d\d\-\d\d \d\d:\d\d:\d\d (?<startup_packages>startup packages remove)",
@@ -406,17 +385,17 @@ fn check_startup_packages_remove(last_line: &str) -> Option<Action> {
 fn remove_dependencies_from_packages(
     packages_list: &mut Vec<String>,
     stats: &mut HashMap<String, Duration>,
-    time_begin: &mut TimeBeginRemoveDependecies,
 ) {
     for package in packages_list.clone() {
-        time_begin.old = SystemTime::now();
+        let (mut time_begin, mut time_begin_package_list_remove, mut time_begin_package_list_iterating) = 
+            (SystemTime::now(), SystemTime::now(), SystemTime::now());
         let (_, output, _) = rashf!("apt-cache rdepends {}", package).unwrap();
-        &time_begin.old.update_stats(
+        &time_begin.update_stats(
             String::from("remove dependencies, apt-cache rdepends"),
             stats,
         );
         let mut lines = output.lines();
-        time_begin.old = SystemTime::now();
+        time_begin = SystemTime::now();
         if let Some(package_name) = lines.next()
             && package.eq(package_name)
         {
@@ -425,23 +404,23 @@ fn remove_dependencies_from_packages(
             {
                 if let Some(_) = lines.next() {
                     //eprintln!("the first line of reverse dependensies is: {}", first_line);
-                    time_begin.package_list_iterating = SystemTime::now();
+                    time_begin_package_list_iterating = SystemTime::now();
                     while let Some(p) = packages_list.iter().position(|key| key.eq(&package)) {
-                        time_begin.package_list_remove = SystemTime::now();
+                        time_begin_package_list_remove = SystemTime::now();
                         packages_list.remove(p);
-                        &time_begin.package_list_remove.update_stats(
+                        &time_begin_package_list_remove.update_stats(
                             String::from("remove dependencies, remove from package_list"),
                             stats,
                         );
                     }
-                    &time_begin.package_list_iterating.update_stats(
+                    &time_begin_package_list_iterating.update_stats(
                         String::from("remove dependencies, iterating over package_list"),
                         stats,
                     );
                 }
             }
         };
-        &time_begin.old.update_stats(
+        &time_begin.update_stats(
             String::from("remove dependencies, iterationg over apt-cache output"),
             stats,
         );
@@ -505,8 +484,7 @@ fn analyze_apt_history_log() {
         Vec::<String>::new(),
     );
     let mut stats = HashMap::<String, Duration>::new();
-    let (mut time_begin, mut time_begin_remove_dependencies) =
-        (TimeBegin::new(), TimeBeginRemoveDependecies::new());
+    let mut time_begin = TimeBegin::new();
 
     time_begin.old = SystemTime::now();
 
@@ -522,9 +500,9 @@ fn analyze_apt_history_log() {
     );
     for (line_number, line) in contents.lines().enumerate() {
         match InstallationStatusAptHistory::get_event(line, &line_number, LogType::AptHistoryGzip) {
-            (Action::Installed, packages_list) => {
+            (action @ (Action::Installed | Action::Remove), packages_list) => {
                 for package_name in packages_list {
-                    manage_installation_candidates_when_action_installed(
+                    action.manage_installation_candidates_on_action(
                         package_name,
                         &mut to_install,
                         &mut to_remove,
@@ -533,17 +511,6 @@ fn analyze_apt_history_log() {
                     );
                 }
             },
-            (Action::Remove, packages_list) => {
-                for package_name in packages_list {
-                    manage_installation_candidates_when_action_remove(
-                        package_name,
-                        &mut to_install,
-                        &mut to_remove,
-                        &mut time_begin,
-                        &mut stats,
-                    );
-                }
-            }
 //              ma
 //                  time_begin.action_remove = SystemTime::now();
 //                  to_remove.push(event.package_name);
@@ -553,8 +520,8 @@ fn analyze_apt_history_log() {
 //                      &time_begin.action_remove,
 //                  );
 //          }
-            (Action::Other(couldnt_parse), packages_list) => eprintln!("not parsed line: {couldnt_parse}"),
-            (Action::StartupPackagesRemove, packages_list) => (),
+            (Action::Other(couldnt_parse), _packages_list) => eprintln!("not parsed line: {couldnt_parse}"),
+            (Action::StartupPackagesRemove, _packages_list) => (),
         };
 
         // ==============================
