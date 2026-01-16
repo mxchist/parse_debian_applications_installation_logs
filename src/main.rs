@@ -9,6 +9,9 @@ use std::time::{Duration, SystemTime};
 use std::vec::Vec;
 use time::{PrimitiveDateTime, macros::format_description, parsing::Parsable};
 
+#[cfg(test)]
+mod tests;
+
 trait LogEvent<Rhs = Self> {
     type Output;
 
@@ -173,6 +176,15 @@ enum LogType {
     AptHistoryGzip,
 }
 
+impl LogType {
+    fn get_path(&self) -> String {
+        match self {
+            LogType::GreppedDpkgLog => std::env::var("GREPPED_LOG").unwrap(),
+            LogType::AptHistoryGzip => std::env::var("APT_HISTORY_GZIP").unwrap(),
+        }
+    }
+}
+
 fn main() {
     //analyze_grepped_dpkg_log();
     analyze_apt_history_log();
@@ -187,7 +199,9 @@ fn analyze_grepped_dpkg_log() {
     (time_begin.old, time_begin.program_start) = (SystemTime::now(), SystemTime::now());
 
     // "${HOME}/Documents/system_config/var/log/dpkg.log"
-    let contents = fs::read_to_string(get_path(LogType::GreppedDpkgLog)).unwrap();
+    let contents = fs::read_to_string(
+        (LogType::GreppedDpkgLog).get_path()
+    ).unwrap();
     &time_begin.old.update_stats(
         String::from("file reading"),
         &mut stats,
@@ -240,7 +254,7 @@ fn analyze_grepped_dpkg_log() {
     );
     //println!("{}", Comparison::new(&to_install_before, &to_install));
     &time_begin.program_start.update_stats(
-        String::from("analyze grepped log"),
+        String::from("analyze_grepped_dpkg_log"),
         &mut stats,
     );
 
@@ -252,13 +266,6 @@ fn analyze_grepped_dpkg_log() {
 
     for (k, v) in stats.iter() {
         println!("{k}\t{}", format_duration(v));
-    }
-}
-
-fn get_path(log_type: LogType) -> String {
-    match log_type {
-        LogType::GreppedDpkgLog => std::env::var("GREPPED_LOG").unwrap(),
-        LogType::AptHistoryGzip => std::env::var("APT_HISTORY_GZIP").unwrap(),
     }
 }
 
@@ -419,7 +426,9 @@ fn format_duration(d: &std::time::Duration) -> String {
 }
 
 fn assert_log_lines_order() {
-    let contents = fs::read_to_string(String::from(get_path(LogType::GreppedDpkgLog))).unwrap();
+    let contents = fs::read_to_string(String::from(
+        (LogType::GreppedDpkgLog).get_path()
+    )).unwrap();
     let re = Regex::new(r"^(?<time>\d{4}\-\d\d\-\d\d \d\d:\d\d:\d\d) ").unwrap();
     let format = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
 
@@ -468,9 +477,9 @@ fn analyze_apt_history_log() {
     let mut stats = HashMap::<String, Duration>::new();
     let mut time_begin = TimeBegin::new();
 
-    time_begin.old = SystemTime::now();
+    (time_begin.old, time_begin.program_start) = (SystemTime::now(), SystemTime::now());
 
-    let apt_history_logs = get_path(LogType::AptHistoryGzip);
+    let apt_history_logs = (LogType::AptHistoryGzip).get_path();
     let (_, contents, _) = rashf!(
         "rg --search-zip --no-filename --sort=path --replace '$1' -P '^Commandline: (.+)' {}",
         apt_history_logs
@@ -510,6 +519,11 @@ fn analyze_apt_history_log() {
         // remove from to_install returned packages with action Remove, add to to_install packages with action Installed
         // ==============================
     }
+    &time_begin.program_start.update_stats(
+        String::from("analyze_apt_history_log"),
+        &mut stats,
+    );
+
 
     print!("[");
     for package in to_install {
