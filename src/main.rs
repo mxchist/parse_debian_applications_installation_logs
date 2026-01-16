@@ -145,27 +145,27 @@ trait WriteStats {
     );
 }
 
-enum DurationSinceBeginning {
-    ActionInstalledRemove{duration: Duration},
-    ActionInstalledPushr{uration: Duration},
-    ActionRemoveRemove{duration: Duration},
-    ActionRemovePush{duration: Duration},
+impl WriteStats for SystemTime{
+    fn update_stats(
+        &self,
+        stats_name: String,
+        stats: &mut HashMap<String, Duration>,
+    ) {
+        let duration_new = (*self).elapsed().unwrap();
+        let mut duration_old = stats.entry(stats_name).or_insert(duration_new);
+        *duration_old += duration_new;
+    }
 }
 
-//impl DurationSinceBeginning {
-//    fn to_string(&self) -> String {
-//        match self {
-//            action_installed_remove: Duration::from_secs(0),
-//            action_installed_push: Duration::from_secs(0),
-//            action_remove_remove: Duration::from_secs(0),
-//            action_remove_push: Duration::from_secs(0),
-//        }
-//    }
-//}
-
-struct DurationsVectorOperations {
-    Remove: Duration,
-    Push: Duration,
+impl WriteStats for Duration {
+    fn update_stats(
+        &self,
+        stats_name: String,
+        stats: &mut HashMap<String, Duration>,
+    ) {
+        let mut duration_old = stats.entry(stats_name).or_insert(*self);
+        *duration_old += *self;
+    }
 }
 
 enum LogType {
@@ -184,7 +184,7 @@ fn analyze_grepped_dpkg_log() {
     let mut stats = HashMap::<String, Duration>::new();
     let mut time_begin = TimeBegin::new();
 
-    time_begin.old = SystemTime::now();
+    (time_begin.old, time_begin.program_start) = (SystemTime::now(), SystemTime::now());
 
     // "${HOME}/Documents/system_config/var/log/dpkg.log"
     let contents = fs::read_to_string(get_path(LogType::GreppedDpkgLog)).unwrap();
@@ -239,6 +239,11 @@ fn analyze_grepped_dpkg_log() {
         &mut stats,
     );
     //println!("{}", Comparison::new(&to_install_before, &to_install));
+    &time_begin.program_start.update_stats(
+        String::from("analyze grepped log"),
+        &mut stats,
+    );
+
     print!("[");
     for package in to_install {
         print!("{package} ");
@@ -247,29 +252,6 @@ fn analyze_grepped_dpkg_log() {
 
     for (k, v) in stats.iter() {
         println!("{k}\t{}", format_duration(v));
-    }
-}
-
-impl WriteStats for SystemTime{
-    fn update_stats(
-        &self,
-        stats_name: String,
-        stats: &mut HashMap<String, Duration>,
-    ) {
-        let duration_new = &self.elapsed().unwrap();
-        let mut duration_old = stats.entry(stats_name).or_insert(duration_new);
-        *duration_old += self;
-    }
-}
-
-impl WriteStats for Duration {
-    fn update_stats(
-        &self,
-        stats_name: String,
-        stats: &mut HashMap<String, Duration>,
-    ) {
-        let mut duration_old = stats.entry(stats_name).or_insert(self);
-        *duration_old += self;
     }
 }
 
@@ -527,6 +509,16 @@ fn analyze_apt_history_log() {
         // ==============================
         // remove from to_install returned packages with action Remove, add to to_install packages with action Installed
         // ==============================
+    }
+
+    print!("[");
+    for package in to_install {
+        print!("{package} ");
+    }
+    println!("]");
+
+    for (k, v) in stats.iter() {
+        println!("{k}\t{}", format_duration(v));
     }
 }
 
