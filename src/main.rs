@@ -183,8 +183,8 @@ enum LogType {
 impl LogType {
     fn get_path(&self) -> String {
         match self {
-            LogType::GreppedDpkgLog => std::env::var("GREPPED_LOG").unwrap(),
-            LogType::AptHistoryGzip => std::env::var("APT_HISTORY_GZIP").unwrap(),
+            LogType::GreppedDpkgLog => std::env::var("GREPPED_LOG").expect("The environment variable GREPPED_LOG isn't not set"),
+            LogType::AptHistoryGzip => std::env::var("APT_HISTORY_GZIP").expect("The environment variable APT_HISTORY_GZIP isn't not set"),
         }
     }
 }
