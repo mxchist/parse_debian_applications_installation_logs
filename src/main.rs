@@ -354,7 +354,9 @@ impl LogEvent<LogType> for InstallationStatusAptHistory {
                             }),
                             Vec::<String>::new(),
                         ),
-                        unknown_command => panic!("Here is an unknown command: {unknown_command}"),
+                        unknown_command => panic!(
+                            "Here is an unknown command: {unknown_command},\nline_number: {line_number},\n line:\n{last_line}"
+                        ),
                     }
                 } else {
                     panic!("The line is empty")
