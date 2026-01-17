@@ -154,8 +154,11 @@ impl WriteStats for SystemTime{
         stats_name: String,
         stats: &mut HashMap<String, Duration>,
     ) {
+        // bug prone: this method requires keeping in mind necessity of refreshing the <SystemTime as Self>:: before method call
         let duration_new = (*self).elapsed().unwrap();
-        let mut duration_old = stats.entry(stats_name).or_insert(duration_new);
+        let duration_old = stats.entry(stats_name).or_insert(
+            Duration::from_secs(0)
+        );
         *duration_old += duration_new;
     }
 }
@@ -166,7 +169,8 @@ impl WriteStats for Duration {
         stats_name: String,
         stats: &mut HashMap<String, Duration>,
     ) {
-        let mut duration_old = stats.entry(stats_name).or_insert(*self);
+        let duration_old = stats.entry(stats_name)
+            .or_insert(Duration::from_secs(0));
         *duration_old += *self;
     }
 }

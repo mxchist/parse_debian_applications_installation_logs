@@ -67,7 +67,7 @@ fn new_stats_based_on_systemtime_should_be_added() {
 
 #[test]
 fn existing_stats_based_on_systemtime_should_be_updated() {
-    let time_begin = SystemTime::now();
+    let mut time_begin = SystemTime::now();
     thread::sleep(
         Duration::from_secs(3)
     );
@@ -78,6 +78,7 @@ fn existing_stats_based_on_systemtime_should_be_updated() {
         &mut stats,
     );
     
+    time_begin = SystemTime::now();
     thread::sleep(
         Duration::from_secs(5)
     );
