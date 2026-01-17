@@ -57,7 +57,7 @@ fn new_stats_based_on_systemtime_should_be_added() {
     );
     let d = stats.get("some operation").unwrap();
     assert!(
-        matches!(d.as_secs(), 3..=4),
+        matches!(d.as_millis(), 3_000..3_100),
         "{}",
         format!(
             "Duration is: {}", d.as_secs()
@@ -89,7 +89,7 @@ fn existing_stats_based_on_systemtime_should_be_updated() {
 
     let d = stats.get("some operation").unwrap();
     assert!(
-        matches!(d.as_secs(), 8..=9),
+        matches!(d.as_millis(), 8_000..8100),
         "{}",
         format!(
             "Duration is: {}, should be: 8", d.as_secs()
