@@ -23,7 +23,7 @@ enum Action {
     Installed,
     Remove,
     StartupPackagesRemove,
-    Other(WontParse),
+    WontParse(String),
 }
 
 impl Action {
@@ -31,9 +31,9 @@ impl Action {
         match s {
             "installed" => Action::Installed,
             "remove" => Action::Remove,
-            _ => Action::Other(WontParse {
-                line: String::from(s),
-            }),
+            _ => Action::WontParse(
+                String::from(s)
+            ),
         }
     }
 
@@ -96,17 +96,6 @@ impl Action {
 }
 
 #[derive(Debug)]
-struct WontParse {
-    line: String,
-}
-
-impl fmt::Display for WontParse {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.line)
-    }
-}
-
-#[derive(Debug)]
 enum ParseErrorSource {
     Command(String),
     FlagAfterPP(String),
@@ -139,8 +128,7 @@ impl fmt::Display for ParseErrorSource {
 impl ParseErrorSource {
     fn error_message(&self, line_number: usize, line: impl fmt::Display) -> String {
         format!(
-            "{},\nline_number: {},\n line:\n{}\n",
-            self, line_number, line,
+            "{self},\nline_number: {line_number},\nline:\n{line}\n"
         )
     }
 }
@@ -223,7 +211,9 @@ fn main() {
 
 fn analyze_grepped_dpkg_log() {
     let (mut to_install, mut to_remove) = (Vec::<String>::new(), Vec::<String>::new());
-    let mut stats = HashMap::<String, Duration>::new();
+    let (mut stats, mut not_parsed) = (
+        HashMap::<String, Duration>::new(), HashMap::<String, i32>::new()
+    );
     let mut time_begin = TimeBegin::new();
 
     (time_begin.old, time_begin.program_start) = (SystemTime::now(), SystemTime::now());
@@ -264,7 +254,11 @@ fn analyze_grepped_dpkg_log() {
                         &mut stats,
                     );
                 }
-                Action::Other(wont_parse) => eprintln!("not parsed line: {wont_parse}"),
+                Action::WontParse(wont_parse) => {
+                    //eprintln!("not parsed line: {wont_parse}")
+                    let count = not_parsed.entry(wont_parse).or_insert(0);
+                    *count += 1;
+                },
                 Action::StartupPackagesRemove => (),
             },
         }
@@ -292,6 +286,11 @@ fn analyze_grepped_dpkg_log() {
         .program_start
         .update_stats(String::from("analyze_grepped_dpkg_log"), &mut stats);
 
+    println!("Ignored entries during parsing:");
+    for (k,v) in not_parsed {
+        println!("{k}: {v}");
+    }
+
     print!("[");
     for package in to_install {
         print!("{package} ");
@@ -315,9 +314,9 @@ impl LogEvent<LogType> for InstallationStatus {
                 let re = Regex::new(r"^2\d{3}\-\d\d\-\d\d \d\d:\d\d:\d\d (status )?(?<action>installed|remove) (?<package_name>[^:]+):").unwrap();
                 let caps = re.captures(last_line);
                 let mut installation_status = InstallationStatus {
-                    action: Action::Other(WontParse {
-                        line: String::from("init"),
-                    }),
+                    action: Action::WontParse(
+                        String::from("init")
+                    ),
                     package_name: String::new(),
                 };
                 match caps {
@@ -365,9 +364,9 @@ impl LogEvent<LogType> for InstallationStatusAptHistory {
                                 .collect(),
                         ),
                         command @ ("aptdaemon" | "/usr/bin/unattended-upgrade") => Ok((
-                            Action::Other(WontParse {
-                                line: String::from(command),
-                            }),
+                            Action::WontParse(
+                                String::from(command),
+                            ),
                             Vec::<String>::new(),
                         )),
                         unknown_command => {
@@ -499,7 +498,9 @@ fn parse_to_datetime(
 
 fn analyze_apt_history_log() {
     let (mut to_install, mut to_remove) = (Vec::<String>::new(), Vec::<String>::new());
-    let mut stats = HashMap::<String, Duration>::new();
+    let (mut stats, mut not_parsed) = (
+        HashMap::<String, Duration>::new(), HashMap::<String, i32>::new()
+    );
     let mut time_begin = TimeBegin::new();
 
     (time_begin.old, time_begin.program_start) = (SystemTime::now(), SystemTime::now());
@@ -545,8 +546,10 @@ fn analyze_apt_history_log() {
                 //                      &time_begin.action_remove,
                 //                  );
                 //          }
-                (Action::Other(wont_parse), _packages_list) => {
-                    eprintln!("not parsed line: {wont_parse}")
+                (Action::WontParse(wont_parse), _packages_list) => {
+                    //eprintln!("not parsed line: {wont_parse}")
+                    let count = not_parsed.entry(wont_parse).or_insert(0);
+                    *count += 1;
                 }
                 (Action::StartupPackagesRemove, _packages_list) => (),
             },
@@ -558,6 +561,11 @@ fn analyze_apt_history_log() {
     time_begin
         .program_start
         .update_stats(String::from("analyze_apt_history_log"), &mut stats);
+
+    println!("Ignored entries during parsing:");
+    for (k,v) in not_parsed {
+        println!("{k}: {v}");
+    }
 
     print!("[");
     for package in to_install {
@@ -581,9 +589,9 @@ fn analyze_apt_command_in_apt_history_log(
                 "Autoremove arguments count is not equal to 1. The autoremove arguments:\n{}",
                 arguments.join(" ").as_str(),
             );
-            Action::Other(WontParse {
-                line: String::from("autoremove"),
-            })
+            Action::WontParse(
+                String::from("autoremove")
+            )
         }
         Some("install") => Action::Installed,
         Some("remove") => Action::Remove,
@@ -607,7 +615,7 @@ fn analyze_apt_arguments(arguments: Vec<String>) -> Result<Vec<String>, ParseErr
 
     for argument in arguments.clone() {
         match argument.as_str() {
-            "-y" | "--yes" => {
+            "-y" | "--yes" | "--reinstall" => {
                 if is_flags_ended {
                     Err(ParseErrorSource::FlagAfterPP(argument))?
                 } else {
