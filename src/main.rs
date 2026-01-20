@@ -537,8 +537,7 @@ fn parse_to_datetime(
 }
 
 fn analyze_apt_history_log() {
-    let (mut to_install, mut to_install_global, mut to_remove) = (
-        Vec::<String>::new(),
+    let (mut to_install, mut to_remove) = (
         Vec::<String>::new(),
         Vec::<String>::new(),
     );
