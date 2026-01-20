@@ -141,7 +141,7 @@ impl ParseErrorSource {
             ParseErrorSource::FlagAfterPP(flag) => format!(
                 "Flags are no longer expected when positional arguments was started, but a flag was encountered. The flag: {flag}.",
             ),
-            ParseErrorSource::FlagIsUnknown(flag) => format!("Here is an unknown flag: {flag}.",),
+            ParseErrorSource::FlagIsUnknown(flag) => format!("Here is an unknown flag: {flag}",),
             ParseErrorSource::ActionNotPresent => String::from("Action isn't present"),
             source => format!("{source}"),
         }
@@ -176,8 +176,8 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{},\nline_number: {}\n, line:\n{}\n",
-            self.source, self.line_number, self.line,
+            "{},\nline_number: {},\n line:\n{}\n",
+            self.source.error_message(), self.line_number, self.line,
         )
     }
 }
@@ -561,11 +561,11 @@ fn analyze_apt_history_log() {
         );
         match res {
             Err(e) => match e.source {
-                e @ (ParseErrorSource::ActionNotPresent | ParseErrorSource::LineIsEmpty) => {
-                    eprintln!("{}", e.error_message());
+                s @ (ParseErrorSource::ActionNotPresent | ParseErrorSource::LineIsEmpty) => {
+                    eprintln!("{s}");
                     continue;
                 }
-                e => panic!("{}", e.error_message()),
+                _ => panic!("{e}"),
             },
 
             Ok(a) => match a {
