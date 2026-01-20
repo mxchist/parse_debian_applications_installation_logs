@@ -122,67 +122,30 @@ impl fmt::Display for ParseErrorSource {
             f,
             "{}",
             match self {
-                ParseErrorSource::Command(_) => "command",
-                ParseErrorSource::FlagAfterPP(_) => "flag after positional parameters",
-                ParseErrorSource::FlagIsUnknown(_) => "unknown flag",
-                ParseErrorSource::ActionNotPresent => "action isn't present",
-                //ParseErrorSource::StartupPackagesRemove => "startup pacakges remove",
-                ParseErrorSource::LineIsEmpty => "The line is empty",
-                ParseErrorSource::DontKnowHowToParse => "don't know how to parse this line",
+                ParseErrorSource::Command(command) =>
+                    format!("Here is unknown command: {command}",),
+                ParseErrorSource::FlagAfterPP(flag) => format!(
+                    "Flags are no longer expected when positional arguments was started, but a flag was encountered. The flag: {flag}.",
+                ),
+                ParseErrorSource::FlagIsUnknown(flag) =>
+                    format!("Here is an unknown flag: {flag}",),
+                ParseErrorSource::ActionNotPresent => String::from("Action isn't present"),
+                source => format!("{source}"),
             }
         )
     }
 }
 
 impl ParseErrorSource {
-    fn error_message(&self) -> String {
-        match self {
-            ParseErrorSource::Command(command) => format!("Here is unknown command: {command}",),
-            ParseErrorSource::FlagAfterPP(flag) => format!(
-                "Flags are no longer expected when positional arguments was started, but a flag was encountered. The flag: {flag}.",
-            ),
-            ParseErrorSource::FlagIsUnknown(flag) => format!("Here is an unknown flag: {flag}",),
-            ParseErrorSource::ActionNotPresent => String::from("Action isn't present"),
-            source => format!("{source}"),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct ParseError {
-    source: ParseErrorSource,
-    line_number: usize,
-    line: String,
-}
-
-impl ParseError {
-    fn from(source: ParseErrorSource, line: &str) -> Self {
-        Self {
-            source,
-            line: line.to_string(),
-            line_number: usize::MAX,
-            //line: String::from(
-            //    "The line field of the ParseError struct hasn't initialized yet."
-            //),
-        }
-    }
-
-    fn set_line_number(&mut self, line_number: usize) {
-        self.line_number = line_number;
-    }
-}
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
+    fn error_message(&self, line_number: usize, line: impl fmt::Display) -> String {
+        format!(
             "{},\nline_number: {},\n line:\n{}\n",
-            self.source.error_message(), self.line_number, self.line,
+            self, line_number, line,
         )
     }
 }
 
-impl error::Error for ParseError {}
+impl error::Error for ParseErrorSource {}
 
 #[derive(Debug)]
 struct InstallationStatus {
@@ -278,28 +241,33 @@ fn analyze_grepped_dpkg_log() {
     //println!("The initial lines count is: {}", lines.clone().len());
     for (line_number, last_line) in lines.rev().enumerate() {
         time_begin.old = SystemTime::now();
-        let event = InstallationStatus::get_event(last_line, LogType::GreppedDpkgLog)
-            .map_err(|mut e| {
-                e.set_line_number(line_number);
-                e
-            })
-            .unwrap();
+        let event = InstallationStatus::get_event(last_line, LogType::GreppedDpkgLog);
         time_begin
             .old
             .update_stats(String::from("get_event"), &mut stats);
-        match event.action {
-            action @ (Action::Installed | Action::Remove) => {
-                action.manage_installation_candidates_on_action(
-                    event.package_name,
-                    &mut to_install,
-                    &mut to_remove,
-                    &mut time_begin,
-                    &mut stats,
-                );
-            }
-            Action::Other(wont_parse) => eprintln!("not parsed line: {wont_parse}"),
-            Action::StartupPackagesRemove => (),
-        };
+        match event {
+            Err(s) => match s {
+                s @ (ParseErrorSource::ActionNotPresent | ParseErrorSource::LineIsEmpty) => {
+                    eprintln!("{}", s.error_message(line_number, last_line));
+                    continue;
+                }
+                _ => panic!("{}", s.error_message(line_number, last_line)),
+            },
+
+            Ok(event) => match event.action {
+                action @ (Action::Installed | Action::Remove) => {
+                    action.manage_installation_candidates_on_action(
+                        event.package_name,
+                        &mut to_install,
+                        &mut to_remove,
+                        &mut time_begin,
+                        &mut stats,
+                    );
+                }
+                Action::Other(wont_parse) => eprintln!("not parsed line: {wont_parse}"),
+                Action::StartupPackagesRemove => (),
+            },
+        }
     }
     //let to_install_before = to_install.clone();
     time_begin.old = SystemTime::now();
@@ -336,9 +304,12 @@ fn analyze_grepped_dpkg_log() {
 }
 
 impl LogEvent<LogType> for InstallationStatus {
-    type Output = Result<InstallationStatus, ParseError>;
+    type Output = Result<InstallationStatus, ParseErrorSource>;
 
-    fn get_event(last_line: &str, log_type: LogType) -> Result<InstallationStatus, ParseError> {
+    fn get_event(
+        last_line: &str,
+        log_type: LogType,
+    ) -> Result<InstallationStatus, ParseErrorSource> {
         match log_type {
             LogType::GreppedDpkgLog => {
                 let re = Regex::new(r"^2\d{3}\-\d\d\-\d\d \d\d:\d\d:\d\d (status )?(?<action>installed|remove) (?<package_name>[^:]+):").unwrap();
@@ -356,17 +327,11 @@ impl LogEvent<LogType> for InstallationStatus {
                             installation_status.package_name =
                                 caps.name("package_name").unwrap().as_str().to_string();
                         }
-                        None => Err(ParseError::from(
-                            ParseErrorSource::ActionNotPresent,
-                            last_line,
-                        ))?,
+                        None => Err(ParseErrorSource::ActionNotPresent)?,
                     },
                     None => {
                         installation_status.action = check_startup_packages_remove(last_line)
-                            .ok_or(ParseError::from(
-                                ParseErrorSource::DontKnowHowToParse,
-                                last_line,
-                            ))?
+                            .ok_or(ParseErrorSource::DontKnowHowToParse)?
                     }
                 }
                 Ok(installation_status)
@@ -379,12 +344,12 @@ impl LogEvent<LogType> for InstallationStatus {
 }
 
 impl LogEvent<LogType> for InstallationStatusAptHistory {
-    type Output = Result<InstallationStatusAptHistory, ParseError>;
+    type Output = Result<InstallationStatusAptHistory, ParseErrorSource>;
 
     fn get_event(
         last_line: &str,
         log_type: LogType,
-    ) -> Result<InstallationStatusAptHistory, ParseError> {
+    ) -> Result<InstallationStatusAptHistory, ParseErrorSource> {
         match log_type {
             LogType::GreppedDpkgLog => panic!(
                 "The vector of InstllationStatus is not implemented for LogType::AptHistoryGzip, only an atomic InstallationStatus allowed"
@@ -405,13 +370,12 @@ impl LogEvent<LogType> for InstallationStatusAptHistory {
                             }),
                             Vec::<String>::new(),
                         )),
-                        unknown_command => Err(ParseError::from(
-                            ParseErrorSource::Command(unknown_command.to_string()),
-                            last_line,
-                        )),
+                        unknown_command => {
+                            Err(ParseErrorSource::Command(unknown_command.to_string()))
+                        }
                     }
                 } else {
-                    Err(ParseError::from(ParseErrorSource::LineIsEmpty, last_line))
+                    Err(ParseErrorSource::LineIsEmpty)
                 }
             }
         }
@@ -534,10 +498,7 @@ fn parse_to_datetime(
 }
 
 fn analyze_apt_history_log() {
-    let (mut to_install, mut to_remove) = (
-        Vec::<String>::new(),
-        Vec::<String>::new(),
-    );
+    let (mut to_install, mut to_remove) = (Vec::<String>::new(), Vec::<String>::new());
     let mut stats = HashMap::<String, Duration>::new();
     let mut time_begin = TimeBegin::new();
 
@@ -553,19 +514,14 @@ fn analyze_apt_history_log() {
         .old
         .update_stats(String::from("logs reading"), &mut stats);
     for (line_number, line) in contents.lines().enumerate() {
-        let res = InstallationStatusAptHistory::get_event(line, LogType::AptHistoryGzip).map_err(
-            |mut e| {
-                e.set_line_number(line_number);
-                e
-            },
-        );
+        let res = InstallationStatusAptHistory::get_event(line, LogType::AptHistoryGzip);
         match res {
-            Err(e) => match e.source {
+            Err(s) => match s {
                 s @ (ParseErrorSource::ActionNotPresent | ParseErrorSource::LineIsEmpty) => {
-                    eprintln!("{s}");
+                    eprintln!("{}", s.error_message(line_number, line));
                     continue;
                 }
-                _ => panic!("{e}"),
+                _ => panic!("{}", s.error_message(line_number, line)),
             },
 
             Ok(a) => match a {
@@ -616,7 +572,7 @@ fn analyze_apt_history_log() {
 
 fn analyze_apt_command_in_apt_history_log(
     arguments: Vec<String>,
-) -> Result<InstallationStatusAptHistory, ParseError> {
+) -> Result<InstallationStatusAptHistory, ParseErrorSource> {
     let action = match arguments.clone().first().map(|s| s.as_str()) {
         Some("autoremove") => {
             assert_eq!(
@@ -645,7 +601,7 @@ fn analyze_apt_command_in_apt_history_log(
     ))
 }
 
-fn analyze_apt_arguments(arguments: Vec<String>) -> Result<Vec<String>, ParseError> {
+fn analyze_apt_arguments(arguments: Vec<String>) -> Result<Vec<String>, ParseErrorSource> {
     let mut is_flags_ended = false;
     let mut packages_list = Vec::<String>::new();
 
@@ -653,24 +609,15 @@ fn analyze_apt_arguments(arguments: Vec<String>) -> Result<Vec<String>, ParseErr
         match argument.as_str() {
             "-y" | "--yes" => {
                 if is_flags_ended {
-                    Err(ParseError::from(
-                        ParseErrorSource::FlagAfterPP(argument),
-                        arguments.join(" ").as_str(),
-                    ))?
+                    Err(ParseErrorSource::FlagAfterPP(argument))?
                 } else {
                     continue;
                 }
             }
             _ => match argument.starts_with("-") {
                 true => match is_flags_ended {
-                    true => Err(ParseError::from(
-                        ParseErrorSource::FlagAfterPP(argument),
-                        arguments.join(" ").as_str(),
-                    ))?,
-                    false => Err(ParseError::from(
-                        ParseErrorSource::FlagIsUnknown(argument),
-                        arguments.join(" ").as_str(),
-                    ))?,
+                    true => Err(ParseErrorSource::FlagAfterPP(argument))?,
+                    false => Err(ParseErrorSource::FlagIsUnknown(argument))?,
                 },
                 false => {
                     is_flags_ended = true;
