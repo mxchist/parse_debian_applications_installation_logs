@@ -37,7 +37,14 @@ impl Action {
         }
     }
 
-    fn manage_installation_candidates_on_action(&self, package_name: String, to_install: &mut Vec<String>, to_remove: &mut Vec<String>, time_begin: &mut TimeBegin, stats: &mut HashMap<String, Duration>) {
+    fn manage_installation_candidates_on_action(
+        &self,
+        package_name: String,
+        to_install: &mut Vec<String>,
+        to_remove: &mut Vec<String>,
+        time_begin: &mut TimeBegin,
+        stats: &mut HashMap<String, Duration>,
+    ) {
         match self {
             Action::Installed => {
                 let action_installed = SystemTime::now();
@@ -46,26 +53,21 @@ impl Action {
                         //let to_remove_before = to_remove.clone();
                         time_begin.action_installed_remove = SystemTime::now();
                         to_remove.remove(p);
-                        time_begin.action_installed_remove.update_stats(
-                            String::from("Action::Installed, remove"),
-                            stats,
-                        );
+                        time_begin
+                            .action_installed_remove
+                            .update_stats(String::from("Action::Installed, remove"), stats);
                         //println!("the package to remove: {}, the to_remove:\n{}", &package_name, Comparison::new(&to_remove_before, &to_remove));
                     }
                     None => {
                         time_begin.action_installed_push = SystemTime::now();
                         to_install.push(package_name);
-                        time_begin.action_installed_push.update_stats(
-                            String::from("Action::Installed, push"),
-                            stats,
-                        );
-                    },
+                        time_begin
+                            .action_installed_push
+                            .update_stats(String::from("Action::Installed, push"), stats);
+                    }
                 };
-                action_installed.update_stats(
-                    String::from("Action::Installed, processing"),
-                    stats,
-                );
-            },
+                action_installed.update_stats(String::from("Action::Installed, processing"), stats);
+            }
             Action::Remove => {
                 let action_remove = SystemTime::now();
                 match to_install.iter().position(|key| key.eq(&package_name)) {
@@ -73,27 +75,22 @@ impl Action {
                         //let to_install_before = to_install.clone();
                         time_begin.action_remove_remove = SystemTime::now();
                         to_install.remove(p);
-                        time_begin.action_remove_remove.update_stats(
-                            String::from("Action::Remove, remove"),
-                            stats,
-                        );
+                        time_begin
+                            .action_remove_remove
+                            .update_stats(String::from("Action::Remove, remove"), stats);
                         //println!("the package to remove: {}, the to_remove:\n{}", package_name, Comparison::new(&to_remove_before, &to_remove));
-                    },
+                    }
                     None => {
                         time_begin.action_remove_push = SystemTime::now();
                         to_remove.push(package_name);
-                        time_begin.action_remove_push.update_stats(
-                            String::from("Action::Remove push"),
-                            stats,
-                        );
+                        time_begin
+                            .action_remove_push
+                            .update_stats(String::from("Action::Remove push"), stats);
                     }
                 };
-                action_remove.update_stats(
-                    String::from("Action::Remove, processing"),
-                    stats,
-                );
-            },
-            _ => {},
+                action_remove.update_stats(String::from("Action::Remove, processing"), stats);
+            }
+            _ => {}
         }
     }
 }
@@ -121,14 +118,17 @@ enum ParseErrorSource {
 
 impl fmt::Display for ParseErrorSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self {
-            ParseErrorSource::Command(_) => "command",
-            ParseErrorSource::FlagAfterPP(_) => "flag after positional parameters",
-            ParseErrorSource::FlagIsUnknown(_) => "unknown flag",
-            ParseErrorSource::ActionNotPresent => "action isn't present",
-            //ParseErrorSource::StartupPackagesRemove => "startup pacakges remove",
-            ParseErrorSource::LineIsEmpty => "The line is empty",
-            ParseErrorSource::DontKnowHowToParse => "don't know how to parse this line",
+        write!(
+            f,
+            "{}",
+            match self {
+                ParseErrorSource::Command(_) => "command",
+                ParseErrorSource::FlagAfterPP(_) => "flag after positional parameters",
+                ParseErrorSource::FlagIsUnknown(_) => "unknown flag",
+                ParseErrorSource::ActionNotPresent => "action isn't present",
+                //ParseErrorSource::StartupPackagesRemove => "startup pacakges remove",
+                ParseErrorSource::LineIsEmpty => "The line is empty",
+                ParseErrorSource::DontKnowHowToParse => "don't know how to parse this line",
             }
         )
     }
@@ -137,18 +137,12 @@ impl fmt::Display for ParseErrorSource {
 impl ParseErrorSource {
     fn error_message(&self) -> String {
         match self {
-            ParseErrorSource::Command(command) => format!(
-                "Here is unknown command: {command}",
-                ),
+            ParseErrorSource::Command(command) => format!("Here is unknown command: {command}",),
             ParseErrorSource::FlagAfterPP(flag) => format!(
                 "Flags are no longer expected when positional arguments was started, but a flag was encountered. The flag: {flag}.",
-                ),
-            ParseErrorSource::FlagIsUnknown(flag) => format!(
-                "Here is an unknown flag: {flag}.",
-                ),
-            ParseErrorSource::ActionNotPresent => format!(
-                "Action isn't present.",
-                ),
+            ),
+            ParseErrorSource::FlagIsUnknown(flag) => format!("Here is an unknown flag: {flag}.",),
+            ParseErrorSource::ActionNotPresent => format!("Action isn't present.",),
             source @ _ => format!("{source}"),
         }
     }
@@ -158,14 +152,11 @@ impl ParseErrorSource {
 struct ParseError {
     source: ParseErrorSource,
     line_number: usize,
-    line: String
+    line: String,
 }
 
 impl ParseError {
-    fn from(
-        source: ParseErrorSource,
-        line: &str
-    ) -> Self {
+    fn from(source: ParseErrorSource, line: &str) -> Self {
         Self {
             source,
             line: line.to_string(),
@@ -183,18 +174,18 @@ impl ParseError {
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}",
+        write!(
+            f,
+            "{}",
             format!(
                 "{},\nline_number: {}\n, line:\n{}\n",
-                self.source,
-                self.line_number,
-                self.line,
+                self.source, self.line_number, self.line,
             )
         )
     }
 }
 
-impl error::Error for ParseError{}
+impl error::Error for ParseError {}
 
 #[derive(Debug)]
 struct InstallationStatus {
@@ -227,36 +218,21 @@ impl TimeBegin {
 }
 
 trait WriteStats {
-    fn update_stats(
-        &self,
-        stats_name: String,
-        stats: &mut HashMap<String, Duration>
-    );
+    fn update_stats(&self, stats_name: String, stats: &mut HashMap<String, Duration>);
 }
 
-impl WriteStats for SystemTime{
-    fn update_stats(
-        &self,
-        stats_name: String,
-        stats: &mut HashMap<String, Duration>,
-    ) {
+impl WriteStats for SystemTime {
+    fn update_stats(&self, stats_name: String, stats: &mut HashMap<String, Duration>) {
         // bug prone: this method requires keeping in mind necessity of refreshing the <SystemTime as Self>:: before method call
         let duration_new = (*self).elapsed().unwrap();
-        let duration_old = stats.entry(stats_name).or_insert(
-            Duration::from_secs(0)
-        );
+        let duration_old = stats.entry(stats_name).or_insert(Duration::from_secs(0));
         *duration_old += duration_new;
     }
 }
 
 impl WriteStats for Duration {
-    fn update_stats(
-        &self,
-        stats_name: String,
-        stats: &mut HashMap<String, Duration>,
-    ) {
-        let duration_old = stats.entry(stats_name)
-            .or_insert(Duration::from_secs(0));
+    fn update_stats(&self, stats_name: String, stats: &mut HashMap<String, Duration>) {
+        let duration_old = stats.entry(stats_name).or_insert(Duration::from_secs(0));
         *duration_old += *self;
     }
 }
@@ -269,9 +245,7 @@ enum LogType {
 impl LogType {
     fn get_path(&self) -> String {
         let get_env_var = |var: &str| -> String {
-            std::env::var(var).expect(
-                &(format!("The environment variable {var} isn't set"))
-            )
+            std::env::var(var).expect(&(format!("The environment variable {var} isn't set")))
         };
 
         match self {
@@ -295,13 +269,10 @@ fn analyze_grepped_dpkg_log() {
     (time_begin.old, time_begin.program_start) = (SystemTime::now(), SystemTime::now());
 
     // "${HOME}/Documents/system_config/var/log/dpkg.log"
-    let contents = fs::read_to_string(
-        (LogType::GreppedDpkgLog).get_path()
-    ).unwrap();
-    time_begin.old.update_stats(
-        String::from("file reading"),
-        &mut stats,
-    );
+    let contents = fs::read_to_string((LogType::GreppedDpkgLog).get_path()).unwrap();
+    time_begin
+        .old
+        .update_stats(String::from("file reading"), &mut stats);
     //for (k, v) in stats.iter() {
     //    println!("{k}\t{}", format_duration(v));
     //}
@@ -310,14 +281,15 @@ fn analyze_grepped_dpkg_log() {
     //println!("The initial lines count is: {}", lines.clone().len());
     for (line_number, last_line) in lines.rev().enumerate() {
         time_begin.old = SystemTime::now();
-        let event = InstallationStatus::get_event(last_line, LogType::GreppedDpkgLog).map_err(
-            |mut e| {
+        let event = InstallationStatus::get_event(last_line, LogType::GreppedDpkgLog)
+            .map_err(|mut e| {
                 e.set_line_number(line_number);
                 e
-            }
-        )
-        .unwrap();
-        time_begin.old.update_stats(String::from("get_event"), &mut stats);
+            })
+            .unwrap();
+        time_begin
+            .old
+            .update_stats(String::from("get_event"), &mut stats);
         match event.action {
             action @ (Action::Installed | Action::Remove) => {
                 action.manage_installation_candidates_on_action(
@@ -335,31 +307,25 @@ fn analyze_grepped_dpkg_log() {
     //let to_install_before = to_install.clone();
     time_begin.old = SystemTime::now();
     to_install.sort();
-    time_begin.old.update_stats(
-        String::from("to_install, sorting"),
-        &mut stats,
-    );
+    time_begin
+        .old
+        .update_stats(String::from("to_install, sorting"), &mut stats);
     time_begin.old = SystemTime::now();
     to_install.dedup();
-    time_begin.old.update_stats(
-        String::from("to_install, deduplicating"),
-        &mut stats,
-    );
+    time_begin
+        .old
+        .update_stats(String::from("to_install, deduplicating"), &mut stats);
     time_begin.old = SystemTime::now();
-    remove_dependencies_from_packages(
-        &mut to_install,
-        &mut stats,
-    );
+    remove_dependencies_from_packages(&mut to_install, &mut stats);
     time_begin.old.update_stats(
         String::from("remove dependencies from packages"),
         &mut stats,
     );
     //use pretty_assertions::Comparison;
     //println!("{}", Comparison::new(&to_install_before, &to_install));
-    time_begin.program_start.update_stats(
-        String::from("analyze_grepped_dpkg_log"),
-        &mut stats,
-    );
+    time_begin
+        .program_start
+        .update_stats(String::from("analyze_grepped_dpkg_log"), &mut stats);
 
     print!("[");
     for package in to_install {
@@ -375,7 +341,7 @@ fn analyze_grepped_dpkg_log() {
 impl LogEvent<LogType> for InstallationStatus {
     type Output = Result<InstallationStatus, ParseError>;
 
-    fn get_event(last_line: &str, log_type: LogType) -> Result<InstallationStatus,ParseError> {
+    fn get_event(last_line: &str, log_type: LogType) -> Result<InstallationStatus, ParseError> {
         match log_type {
             LogType::GreppedDpkgLog => {
                 let re = Regex::new(r"^2\d{3}\-\d\d\-\d\d \d\d:\d\d:\d\d (status )?(?<action>installed|remove) (?<package_name>[^:]+):").unwrap();
@@ -392,22 +358,19 @@ impl LogEvent<LogType> for InstallationStatus {
                             installation_status.action = Action::from_str(action.as_str());
                             installation_status.package_name =
                                 caps.name("package_name").unwrap().as_str().to_string();
-                        },
-                        None => Err(
-                            ParseError::from(
-                                ParseErrorSource::ActionNotPresent,
-                                last_line,
-                            )
-                        )?,
+                        }
+                        None => Err(ParseError::from(
+                            ParseErrorSource::ActionNotPresent,
+                            last_line,
+                        ))?,
                     },
-                    None =>
+                    None => {
                         installation_status.action = check_startup_packages_remove(last_line)
-                        .ok_or(
-                            ParseError::from(
+                            .ok_or(ParseError::from(
                                 ParseErrorSource::DontKnowHowToParse,
                                 last_line,
-                            )
-                        )?,
+                            ))?
+                    }
                 }
                 Ok(installation_status)
             }
@@ -439,28 +402,19 @@ impl LogEvent<LogType> for InstallationStatusAptHistory {
                                 .map(|s| s.to_string())
                                 .collect(),
                         ),
-                        command @ ("aptdaemon" | "/usr/bin/unattended-upgrade") => Ok(
-                            (
-                                Action::Other(WontParse {
-                                    line: String::from(command),
-                                }),
-                                Vec::<String>::new()
-                            ),
-                        ),
-                        unknown_command => Err(
-                            ParseError::from(
-                                    ParseErrorSource::Command(unknown_command.to_string()),
-                                    last_line,
-                                )
-                            )
-                        }
-                    } else {
-                        Err(
-                            ParseError::from(
-                                ParseErrorSource::LineIsEmpty,
-                                last_line,
-                            )
-                        )
+                        command @ ("aptdaemon" | "/usr/bin/unattended-upgrade") => Ok((
+                            Action::Other(WontParse {
+                                line: String::from(command),
+                            }),
+                            Vec::<String>::new(),
+                        )),
+                        unknown_command => Err(ParseError::from(
+                            ParseErrorSource::Command(unknown_command.to_string()),
+                            last_line,
+                        )),
+                    }
+                } else {
+                    Err(ParseError::from(ParseErrorSource::LineIsEmpty, last_line))
                 }
             }
         }
@@ -489,8 +443,11 @@ fn remove_dependencies_from_packages(
     stats: &mut HashMap<String, Duration>,
 ) {
     for package in packages_list.clone() {
-        let (mut time_begin, mut time_begin_package_list_remove, mut time_begin_package_list_iterating) = 
-            (SystemTime::now(), SystemTime::now(), SystemTime::now());
+        let (
+            mut time_begin,
+            mut time_begin_package_list_remove,
+            mut time_begin_package_list_iterating,
+        ) = (SystemTime::now(), SystemTime::now(), SystemTime::now());
         let (_, output, _) = rashf!("apt-cache rdepends {}", package).unwrap();
         time_begin.update_stats(
             String::from("remove dependencies, apt-cache rdepends"),
@@ -539,9 +496,7 @@ fn format_duration(d: &std::time::Duration) -> String {
 }
 
 fn assert_log_lines_order() {
-    let contents = fs::read_to_string(String::from(
-        (LogType::GreppedDpkgLog).get_path()
-    )).unwrap();
+    let contents = fs::read_to_string(String::from((LogType::GreppedDpkgLog).get_path())).unwrap();
     let re = Regex::new(r"^(?<time>\d{4}\-\d\d\-\d\d \d\d:\d\d:\d\d) ").unwrap();
     let format = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
 
@@ -598,24 +553,22 @@ fn analyze_apt_history_log() {
         apt_history_logs
     )
     .unwrap();
-    time_begin.old.update_stats(
-        String::from("logs reading"),
-        &mut stats,
-    );
+    time_begin
+        .old
+        .update_stats(String::from("logs reading"), &mut stats);
     for (line_number, line) in contents.lines().enumerate() {
-        let res = InstallationStatusAptHistory::get_event(
-            line, LogType::AptHistoryGzip
-        ).map_err(|mut e| {
+        let res = InstallationStatusAptHistory::get_event(line, LogType::AptHistoryGzip).map_err(
+            |mut e| {
                 e.set_line_number(line_number);
                 e
-            }
+            },
         );
         match res {
             Err(e) => match e.source {
                 e @ (ParseErrorSource::ActionNotPresent | ParseErrorSource::LineIsEmpty) => {
                     eprintln!("{}", e.error_message());
                     continue;
-                },
+                }
                 e => panic!("{}", e.error_message()),
             },
 
@@ -630,30 +583,29 @@ fn analyze_apt_history_log() {
                             &mut stats,
                         );
                     }
-                },
-    //              ma
-    //                  time_begin.action_remove = SystemTime::now();
-    //                  to_remove.push(event.package_name);
-    //                  update_stats(
-    //                      String::from("Action::Remove"),
-    //                      &mut stats,
-    //                      &time_begin.action_remove,
-    //                  );
-    //          }
-                (Action::Other(wont_parse), _packages_list) => eprintln!("not parsed line: {wont_parse}"),
+                }
+                //              ma
+                //                  time_begin.action_remove = SystemTime::now();
+                //                  to_remove.push(event.package_name);
+                //                  update_stats(
+                //                      String::from("Action::Remove"),
+                //                      &mut stats,
+                //                      &time_begin.action_remove,
+                //                  );
+                //          }
+                (Action::Other(wont_parse), _packages_list) => {
+                    eprintln!("not parsed line: {wont_parse}")
+                }
                 (Action::StartupPackagesRemove, _packages_list) => (),
             },
-
             // ==============================
             // remove from to_install returned packages with action Remove, add to to_install packages with action Installed
             // ==============================
         }
     }
-    time_begin.program_start.update_stats(
-        String::from("analyze_apt_history_log"),
-        &mut stats,
-    );
-
+    time_begin
+        .program_start
+        .update_stats(String::from("analyze_apt_history_log"), &mut stats);
 
     print!("[");
     for package in to_install {
@@ -666,7 +618,9 @@ fn analyze_apt_history_log() {
     }
 }
 
-fn analyze_apt_command_in_apt_history_log(arguments: Vec<String>) -> Result<InstallationStatusAptHistory, ParseError> {
+fn analyze_apt_command_in_apt_history_log(
+    arguments: Vec<String>,
+) -> Result<InstallationStatusAptHistory, ParseError> {
     let action = match arguments.clone().first().map(|s| s.as_str()) {
         Some("autoremove") => {
             assert_eq!(
@@ -681,7 +635,7 @@ fn analyze_apt_command_in_apt_history_log(arguments: Vec<String>) -> Result<Inst
             Action::Other(WontParse {
                 line: String::from("autoremove"),
             })
-        },
+        }
         Some("install") => Action::Installed,
         Some("remove") => Action::Remove,
         Some("reinstall") => Action::Installed,
@@ -692,12 +646,10 @@ fn analyze_apt_command_in_apt_history_log(arguments: Vec<String>) -> Result<Inst
         ),
         None => panic!("There are no any arguments after command"),
     };
-    Ok(
-        (
-            action,
-            analyze_apt_arguments(arguments[1..].into_iter().map(|s| s.to_string()).collect())?,
-        )
-    )
+    Ok((
+        action,
+        analyze_apt_arguments(arguments[1..].into_iter().map(|s| s.to_string()).collect())?,
+    ))
 }
 
 fn analyze_apt_arguments(arguments: Vec<String>) -> Result<Vec<String>, ParseError> {
@@ -709,25 +661,23 @@ fn analyze_apt_arguments(arguments: Vec<String>) -> Result<Vec<String>, ParseErr
             "-y" | "--yes" => {
                 if is_flags_ended {
                     Err(ParseError::from(
-                            ParseErrorSource::FlagAfterPP(argument),
-                            arguments.join(" ").as_str(),
-                            ))?
+                        ParseErrorSource::FlagAfterPP(argument),
+                        arguments.join(" ").as_str(),
+                    ))?
                 } else {
                     continue;
                 }
             }
             _ => match argument.starts_with("-") {
                 true => match is_flags_ended {
-                    true =>
-                        Err(ParseError::from(
-                                ParseErrorSource::FlagAfterPP(argument),
-                                arguments.join(" ").as_str(),
-                                ))?,
-                    false =>
-                        Err(ParseError::from(
-                                ParseErrorSource::FlagIsUnknown(argument),
-                                arguments.join(" ").as_str(),
-                                ))?,
+                    true => Err(ParseError::from(
+                        ParseErrorSource::FlagAfterPP(argument),
+                        arguments.join(" ").as_str(),
+                    ))?,
+                    false => Err(ParseError::from(
+                        ParseErrorSource::FlagIsUnknown(argument),
+                        arguments.join(" ").as_str(),
+                    ))?,
                 },
                 false => {
                     is_flags_ended = true;

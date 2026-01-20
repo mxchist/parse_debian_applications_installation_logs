@@ -1,9 +1,9 @@
 use super::*;
-use pretty_assertions::assert_eq;
-use std::time::{Duration, SystemTime};
-use std::collections::HashMap;
 use crate::WriteStats;
+use pretty_assertions::assert_eq;
+use std::collections::HashMap;
 use std::thread;
+use std::time::{Duration, SystemTime};
 
 #[test]
 fn duration_should_be_added() {
@@ -15,10 +15,7 @@ fn duration_should_be_added() {
 #[test]
 fn new_stats_based_on_duration_should_be_added() {
     let mut stats = HashMap::<String, Duration>::new();
-    Duration::from_secs(3).update_stats(
-        String::from("some operation"),
-        &mut stats,
-    );
+    Duration::from_secs(3).update_stats(String::from("some operation"), &mut stats);
     let d = stats.get("some operation").unwrap();
     assert_eq!(3, d.as_secs());
 }
@@ -26,74 +23,48 @@ fn new_stats_based_on_duration_should_be_added() {
 #[test]
 fn existing_stats_based_on_duration_should_be_updated() {
     let mut stats = HashMap::<String, Duration>::new();
-    Duration::from_secs(3).update_stats(
-        String::from("some operation"),
-        &mut stats,
-    );
-    Duration::from_secs(5).update_stats(
-        String::from("some operation"),
-        &mut stats,
-    );
+    Duration::from_secs(3).update_stats(String::from("some operation"), &mut stats);
+    Duration::from_secs(5).update_stats(String::from("some operation"), &mut stats);
     let d = stats.get("some operation").unwrap();
-    assert_eq!(d.as_secs(), 8,
+    assert_eq!(
+        d.as_secs(),
+        8,
         "{}",
-        format!(
-            "Duration is: {}, should be: 8", d.as_secs()
-        ),
+        format!("Duration is: {}, should be: 8", d.as_secs()),
     );
 }
 
 #[test]
 fn new_stats_based_on_systemtime_should_be_added() {
     let time_begin = SystemTime::now();
-    thread::sleep(
-        Duration::from_secs(3)
-    );
+    thread::sleep(Duration::from_secs(3));
 
     let mut stats = HashMap::<String, Duration>::new();
-    time_begin.update_stats(
-        String::from("some operation"),
-        &mut stats,
-    );
+    time_begin.update_stats(String::from("some operation"), &mut stats);
     let d = stats.get("some operation").unwrap();
     assert!(
         matches!(d.as_millis(), 3_000..3_100),
         "{}",
-        format!(
-            "Duration is: {}", d.as_secs()
-        ),
+        format!("Duration is: {}", d.as_secs()),
     );
 }
 
 #[test]
 fn existing_stats_based_on_systemtime_should_be_updated() {
     let mut time_begin = SystemTime::now();
-    thread::sleep(
-        Duration::from_secs(3)
-    );
+    thread::sleep(Duration::from_secs(3));
 
     let mut stats = HashMap::<String, Duration>::new();
-    time_begin.update_stats(
-        String::from("some operation"),
-        &mut stats,
-    );
-    
+    time_begin.update_stats(String::from("some operation"), &mut stats);
+
     time_begin = SystemTime::now();
-    thread::sleep(
-        Duration::from_secs(5)
-    );
-    time_begin.update_stats(
-        String::from("some operation"),
-        &mut stats,
-    );
+    thread::sleep(Duration::from_secs(5));
+    time_begin.update_stats(String::from("some operation"), &mut stats);
 
     let d = stats.get("some operation").unwrap();
     assert!(
         matches!(d.as_millis(), 8_000..8100),
         "{}",
-        format!(
-            "Duration is: {}, should be: 8", d.as_secs()
-        ),
+        format!("Duration is: {}, should be: 8", d.as_secs()),
     );
 }
-
