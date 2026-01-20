@@ -142,8 +142,8 @@ impl ParseErrorSource {
                 "Flags are no longer expected when positional arguments was started, but a flag was encountered. The flag: {flag}.",
             ),
             ParseErrorSource::FlagIsUnknown(flag) => format!("Here is an unknown flag: {flag}.",),
-            ParseErrorSource::ActionNotPresent => format!("Action isn't present.",),
-            source @ _ => format!("{source}"),
+            ParseErrorSource::ActionNotPresent => String::from("Action isn't present"),
+            source => format!("{source}"),
         }
     }
 }
@@ -176,11 +176,8 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}",
-            format!(
-                "{},\nline_number: {}\n, line:\n{}\n",
-                self.source, self.line_number, self.line,
-            )
+            "{},\nline_number: {}\n, line:\n{}\n",
+            self.source, self.line_number, self.line,
         )
     }
 }
@@ -245,7 +242,7 @@ enum LogType {
 impl LogType {
     fn get_path(&self) -> String {
         let get_env_var = |var: &str| -> String {
-            std::env::var(var).expect(&(format!("The environment variable {var} isn't set")))
+            std::env::var(var).expect("The environment variable {var} isn't set")
         };
 
         match self {
@@ -277,7 +274,7 @@ fn analyze_grepped_dpkg_log() {
     //    println!("{k}\t{}", format_duration(v));
     //}
     //panic!("Immediate interruption");
-    let mut lines = contents.lines();
+    let lines = contents.lines();
     //println!("The initial lines count is: {}", lines.clone().len());
     for (line_number, last_line) in lines.rev().enumerate() {
         time_begin.old = SystemTime::now();
@@ -398,7 +395,7 @@ impl LogEvent<LogType> for InstallationStatusAptHistory {
                     match *command {
                         "apt" | "apt-get" => analyze_apt_command_in_apt_history_log(
                             command_with_arguments.clone()[1..]
-                                .into_iter()
+                                .iter()
                                 .map(|s| s.to_string())
                                 .collect(),
                         ),
@@ -428,7 +425,7 @@ fn check_startup_packages_remove(last_line: &str) -> Option<Action> {
     .unwrap();
     match re.captures(last_line) {
         Some(caps) => {
-            if let Some(_) = caps.name("startup_packages") {
+            if caps.name("startup_packages").is_some() {
                 Some(Action::StartupPackagesRemove)
             } else {
                 None
@@ -461,7 +458,7 @@ fn remove_dependencies_from_packages(
             if let Some(reverse_depends) = lines.next()
                 && reverse_depends.eq("Reverse Depends:")
             {
-                if let Some(_) = lines.next() {
+                if lines.next().is_some() {
                     //eprintln!("the first line of reverse dependensies is: {}", first_line);
                     time_begin_package_list_iterating = SystemTime::now();
                     while let Some(p) = packages_list.iter().position(|key| key.eq(&package)) {
@@ -496,7 +493,7 @@ fn format_duration(d: &std::time::Duration) -> String {
 }
 
 fn assert_log_lines_order() {
-    let contents = fs::read_to_string(String::from((LogType::GreppedDpkgLog).get_path())).unwrap();
+    let contents = fs::read_to_string((LogType::GreppedDpkgLog).get_path()).unwrap();
     let re = Regex::new(r"^(?<time>\d{4}\-\d\d\-\d\d \d\d:\d\d:\d\d) ").unwrap();
     let format = format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
 
@@ -625,11 +622,8 @@ fn analyze_apt_command_in_apt_history_log(
             assert_eq!(
                 arguments.len(),
                 1,
-                "{}",
-                format!(
-                    "Autoremove arguments count is not equal to 1. The autoremove arguments:\n{}",
-                    arguments.join(" ").as_str()
-                )
+                "Autoremove arguments count is not equal to 1. The autoremove arguments:\n{}",
+                arguments.join(" ").as_str(),
             );
             Action::Other(WontParse {
                 line: String::from("autoremove"),
@@ -647,7 +641,7 @@ fn analyze_apt_command_in_apt_history_log(
     };
     Ok((
         action,
-        analyze_apt_arguments(arguments[1..].into_iter().map(|s| s.to_string()).collect())?,
+        analyze_apt_arguments(arguments[1..].iter().map(|s| s.to_string()).collect())?,
     ))
 }
 
