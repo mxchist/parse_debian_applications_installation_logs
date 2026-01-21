@@ -18,11 +18,14 @@ trait LogEvent<Rhs = Self> {
     fn get_event(last_line: &str, log_type: LogType) -> Self::Output;
 }
 
+const PACKAGEKIT_ENCOUNTER_LIMIT: usize = 1;
+
 #[derive(Debug)]
 enum Action {
     Installed,
     Remove,
     StartupPackagesRemove,
+    PackageKit,
     WontParse(String),
 }
 
@@ -31,6 +34,7 @@ impl Action {
         match s {
             "installed" => Action::Installed,
             "remove" => Action::Remove,
+            "packagekit" => Action::PackageKit,
             _ => Action::WontParse(
                 String::from(s)
             ),
@@ -215,6 +219,7 @@ fn analyze_grepped_dpkg_log() {
         HashMap::<String, Duration>::new(), HashMap::<String, i32>::new()
     );
     let mut time_begin = TimeBegin::new();
+    let mut packagekit_encounter_count = 0;
 
     (time_begin.old, time_begin.program_start) = (SystemTime::now(), SystemTime::now());
 
@@ -260,6 +265,14 @@ fn analyze_grepped_dpkg_log() {
                     *count += 1;
                 },
                 Action::StartupPackagesRemove => (),
+                Action::PackageKit => {
+                    match packagekit_encounter_count > PACKAGEKIT_ENCOUNTER_LIMIT {
+                        true => panic!(
+                            "packagekit encounter cound exceeds encounter limit, line number: {line_number},\nline:{last_line}"
+                        ),
+                        false => packagekit_encounter_count += 1,
+                    };
+                },
             },
         }
     }
@@ -323,8 +336,10 @@ impl LogEvent<LogType> for InstallationStatus {
                     Some(caps) => match caps.name("action") {
                         Some(action) => {
                             installation_status.action = Action::from_str(action.as_str());
-                            installation_status.package_name =
-                                caps.name("package_name").unwrap().as_str().to_string();
+                            if matches!(installation_status.action, Action::Installed | Action::Remove) {
+                                installation_status.package_name =
+                                    caps.name("package_name").unwrap().as_str().to_string();
+                            }
                         }
                         None => Err(ParseErrorSource::ActionNotPresent)?,
                     },
@@ -367,6 +382,10 @@ impl LogEvent<LogType> for InstallationStatusAptHistory {
                             Action::WontParse(
                                 String::from(command),
                             ),
+                            Vec::<String>::new(),
+                        )),
+                        command @ "packagekit" => Ok((
+                            Action::PackageKit,
                             Vec::<String>::new(),
                         )),
                         unknown_command => {
@@ -502,6 +521,7 @@ fn analyze_apt_history_log() {
         HashMap::<String, Duration>::new(), HashMap::<String, i32>::new()
     );
     let mut time_begin = TimeBegin::new();
+    let mut packagekit_encounter_count = 0;
 
     (time_begin.old, time_begin.program_start) = (SystemTime::now(), SystemTime::now());
 
@@ -552,6 +572,14 @@ fn analyze_apt_history_log() {
                     *count += 1;
                 }
                 (Action::StartupPackagesRemove, _packages_list) => (),
+                (Action::PackageKit, _package_list) => {
+                    match packagekit_encounter_count > PACKAGEKIT_ENCOUNTER_LIMIT {
+                        true => panic!(
+                            "packagekit encounter cound exceeds encounter limit, line number: {line_number},\nline:{line}"
+                        ),
+                        false => packagekit_encounter_count += 1,
+                    };
+                },
             },
             // ==============================
             // remove from to_install returned packages with action Remove, add to to_install packages with action Installed
