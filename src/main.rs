@@ -21,11 +21,14 @@ trait LogEvent<Rhs = Self> {
 const PACKAGEKIT_ENCOUNTER_LIMIT: usize = 1;
 
 #[derive(Debug)]
+#[derive(Clone, strum_macros::Display)]
+#[strum(prefix="Action::")]
 enum Action {
     Installed,
     Remove,
     StartupPackagesRemove,
     PackageKit,
+    #[strum(to_string="WontParse({0})")]
     WontParse(String),
 }
 
@@ -107,6 +110,7 @@ enum ParseErrorSource {
     ActionNotPresent,
     LineIsEmpty,
     DontKnowHowToParse,
+    OddAction{action_before: Action, action_new: String}
 }
 
 impl fmt::Display for ParseErrorSource {
@@ -122,6 +126,9 @@ impl fmt::Display for ParseErrorSource {
                 ),
                 ParseErrorSource::FlagIsUnknown(flag) =>
                     format!("Here is an unknown flag: {flag}",),
+                ParseErrorSource::OddAction{action_before, action_new} => format!(
+                    "apt or apt-get has odd action above existing one. The new action: {action_new}, the existing action: {action_before}"
+                ),
                 ParseErrorSource::ActionNotPresent => String::from("Action isn't present"),
                 source => format!("{source}"),
             }
@@ -384,7 +391,7 @@ impl LogEvent<LogType> for InstallationStatusAptHistory {
                             ),
                             Vec::<String>::new(),
                         )),
-                        command @ "packagekit" => Ok((
+                        _command @ "packagekit" => Ok((
                             Action::PackageKit,
                             Vec::<String>::new(),
                         )),
@@ -606,61 +613,126 @@ fn analyze_apt_history_log() {
     }
 }
 
+//fn analyze_apt_command_in_apt_history_log(
+//    arguments: Vec<String>,
+//) -> Result<InstallationStatusAptHistory, ParseErrorSource> {
+//    let action = match arguments.clone().first().map(|s| s.as_str()) {
+//        Some("autoremove") => {
+//            assert_eq!(
+//                arguments.len(),
+//                1,
+//                "Autoremove arguments count is not equal to 1. The autoremove arguments:\n{}",
+//                arguments.join(" ").as_str(),
+//            );
+//            Action::WontParse(
+//                String::from("autoremove")
+//            )
+//        }
+//        Some("install") => Action::Installed,
+//        Some("remove") => Action::Remove,
+//        Some("reinstall") => Action::Installed,
+//        Some(other_action) => panic!(
+//            "apt or apt-get action is unknown, action: {},\nThe line:\n{} ",
+//            other_action,
+//            arguments.join(" ").as_str()
+//        ),
+//        None => panic!("There are no any arguments after command"),
+//    };
+//    Ok((
+//        action,
+//        analyze_apt_arguments(arguments[1..].iter().map(|s| s.to_string()).collect())?,
+//    ))
+//}
+//
+//fn analyze_apt_arguments(arguments: Vec<String>) -> Result<Vec<String>, ParseErrorSource> {
+//    let mut is_flags_ended = false;
+//    let mut packages_list = Vec::<String>::new();
+//
+//    for argument in arguments.clone() {
+//        match argument.as_str() {
+//            "-y" | "--yes" | "--reinstall" => {
+//                if is_flags_ended {
+//                    Err(ParseErrorSource::FlagAfterPP(argument))?
+//                } else {
+//                    continue;
+//                }
+//            }
+//            _ => match argument.starts_with("-") {
+//                true => match is_flags_ended {
+//                    true => Err(ParseErrorSource::FlagAfterPP(argument))?,
+//                    false => Err(ParseErrorSource::FlagIsUnknown(argument))?,
+//                },
+//                false => {
+//                    is_flags_ended = true;
+//                    packages_list.push(argument);
+//                }
+//            },
+//        }
+//    }
+//    Ok(packages_list)
+//}
+
 fn analyze_apt_command_in_apt_history_log(
     arguments: Vec<String>,
 ) -> Result<InstallationStatusAptHistory, ParseErrorSource> {
-    let action = match arguments.clone().first().map(|s| s.as_str()) {
-        Some("autoremove") => {
-            assert_eq!(
-                arguments.len(),
-                1,
-                "Autoremove arguments count is not equal to 1. The autoremove arguments:\n{}",
-                arguments.join(" ").as_str(),
-            );
-            Action::WontParse(
-                String::from("autoremove")
-            )
-        }
-        Some("install") => Action::Installed,
-        Some("remove") => Action::Remove,
-        Some("reinstall") => Action::Installed,
-        Some(other_action) => panic!(
-            "apt or apt-get action is unknown, action: {},\nThe line:\n{} ",
-            other_action,
-            arguments.join(" ").as_str()
-        ),
-        None => panic!("There are no any arguments after command"),
-    };
-    Ok((
-        action,
-        analyze_apt_arguments(arguments[1..].iter().map(|s| s.to_string()).collect())?,
-    ))
-}
-
-fn analyze_apt_arguments(arguments: Vec<String>) -> Result<Vec<String>, ParseErrorSource> {
     let mut is_flags_ended = false;
+    let mut action: Option<Action> = None;
     let mut packages_list = Vec::<String>::new();
-
-    for argument in arguments.clone() {
-        match argument.as_str() {
-            "-y" | "--yes" | "--reinstall" => {
-                if is_flags_ended {
-                    Err(ParseErrorSource::FlagAfterPP(argument))?
-                } else {
-                    continue;
-                }
-            }
-            _ => match argument.starts_with("-") {
-                true => match is_flags_ended {
-                    true => Err(ParseErrorSource::FlagAfterPP(argument))?,
-                    false => Err(ParseErrorSource::FlagIsUnknown(argument))?,
-                },
-                false => {
-                    is_flags_ended = true;
-                    packages_list.push(argument);
-                }
+    for argument in &arguments {
+        match action.clone() {
+            None => {
+                match argument.as_str() {
+                    "autoremove" => {
+                        assert_eq!(
+                            arguments.len(),
+                            1,
+                            "Autoremove arguments count is not equal to 1. The autoremove arguments:\n{}",
+                            arguments.join(" ").as_str(),
+                        );
+                        action = Some(
+                            Action::WontParse(
+                                String::from("autoremove")
+                            )
+                        );
+                    }
+                    "install" => { action = Some(Action::Installed); },
+                    "remove" => { action = Some(Action::Remove); },
+                    "reinstall" => { action = Some(Action::Installed); },
+                    _argument @ ("-y" | "--yes" | "--reinstall") => { continue;},
+                    other_action => match argument.starts_with("-") {
+                        true => Err(ParseErrorSource::FlagIsUnknown(argument.to_string()))?,
+                        false => panic!(
+                            "apt or apt-get action is unknown, action: {},\nThe line:\n{} ",
+                            other_action,
+                            arguments.join(" ").as_str()
+                        ),
+                    },
+                };
             },
+            Some(action_before) => {
+                match argument.as_str() {
+                    action_new @ ("autoremove" | "remove" | "reinstall") => Err(ParseErrorSource::OddAction{action_before, action_new: action_new.to_string()})?,
+                    _argument @ ("-y" | "--yes" | "--reinstall") => { continue;},
+                    argument => {
+                        match argument.starts_with("-") {
+                            true => match is_flags_ended {
+                                true => Err(ParseErrorSource::FlagAfterPP(argument.to_string()))?,
+                                false => Err(ParseErrorSource::FlagIsUnknown(argument.to_string()))?,
+                            },
+                            false => {
+                                is_flags_ended = true;
+                                packages_list.push(argument.to_string());
+                            }
+                        };
+
+                    }
+                };
+            }
         }
-    }
-    Ok(packages_list)
+    };
+
+    Ok((
+        action.unwrap(),
+        packages_list,
+    ))
 }
