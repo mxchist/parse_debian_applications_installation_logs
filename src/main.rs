@@ -204,7 +204,7 @@ enum LogType {
 impl LogType {
     fn get_path(&self) -> String {
         let get_env_var = |var: &str| -> String {
-            std::env::var(var).expect("The environment variable {var} isn't set")
+            std::env::var(var).expect((format!("The environment variable {var} isn't set").as_str()))
         };
 
         match self {
